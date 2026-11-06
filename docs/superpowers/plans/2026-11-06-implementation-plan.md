@@ -15,7 +15,7 @@
 |---|---|---|
 | **Phase 0** | Felix | Scaffold, accounts, x402 spike: **DONE** (see `docs/spike-notes.md`) |
 | **Agent core** ([#1](https://github.com/felix859/EthGlobalMumbai/issues/1)) | @felix859 | B1, B2, B3, B6: **DONE, merged** |
-| **Server** ([#2](https://github.com/felix859/EthGlobalMumbai/issues/2), branch `ws-server`) | @gopimehta | A1-A6 |
+| **Server** ([#2](https://github.com/felix859/EthGlobalMumbai/issues/2), branch `ws-server`) | @gopimehta | A1-A6: A1-A5 **DONE** (A6 deploy optional, open) |
 | **Web** ([#3](https://github.com/felix859/EthGlobalMumbai/issues/3), branch `ws-web`) | @5bgjfbyqcr-cmd | C1-C5 |
 | **API + Audit** ([#4](https://github.com/felix859/EthGlobalMumbai/issues/4), branch `ws-api-ship`) | @Efia01 | B4, B5, B7 + approve/health/replay routes |
 | **Ship** ([#13](https://github.com/felix859/EthGlobalMumbai/issues/13), branch `ws-ship`) | @felix859 | D1-D6: README, video, submission |
@@ -166,16 +166,16 @@ Goal: prove **one real payment on Hedera testnet**, in one throwaway script, bef
 
 Files: `packages/server/src/*`. Reference: `docs/spike-notes.md`.
 
-- [ ] **A1. Catalogue endpoint.** `GET /catalogue` (free, no payment) returns a `Catalogue`. Config (prices, merchant account, asset) from env/constants so the asset can switch HBAR to HTS in one place.
-- [ ] **A2. Paywall.** Gate `/api/*` with the x402 middleware from the spike, one price per route from the catalogue. `GET /api/weather` without payment returns **402** with valid `PaymentRequirements` (`scheme: exact`, `network: hedera:testnet`, `payTo`, `amount`, `asset`, `extra.feePayer`).
-- [ ] **A3. Data handlers**, each cached 60 s in memory, Mumbai defaults (lat 19.076, lon 72.8777):
+- [x] **A1. Catalogue endpoint.** `GET /catalogue` (free, no payment) returns a `Catalogue`. Config (prices, merchant account, asset) from env/constants so the asset can switch HBAR to HTS in one place.
+- [x] **A2. Paywall.** Gate `/api/*` with the x402 middleware from the spike, one price per route from the catalogue. `GET /api/weather` without payment returns **402** with valid `PaymentRequirements` (`scheme: exact`, `network: hedera:testnet`, `payTo`, `amount`, `asset`, `extra.feePayer`).
+- [x] **A3. Data handlers**, each cached 60 s in memory, Mumbai defaults (lat 19.076, lon 72.8777):
   - `weather` → Open-Meteo forecast (`https://api.open-meteo.com/v1/forecast`)
   - `air-quality` → Open-Meteo air quality (`https://air-quality-api.open-meteo.com/v1/air-quality`)
   - `hbar-price` → CoinGecko simple price (`hedera-hashgraph`, INR and USD)
   - `headlines` → Hacker News top 5 (`https://hacker-news.firebaseio.com/v0/topstories.json` plus item lookups)
   - Return compact JSON (the model reads it, so keep it small and flat).
-- [ ] **A4. Upstream health.** If the upstream API is failing and there is no cached value, respond with 502 *before* the payment settles if the middleware allows (e.g. a warm-up fetch on boot plus a background refresh), so users are not charged for errors. Note the limitation in the README if it cannot be done cleanly.
-- [ ] **A5. Integration test.** Start the server in a test, call each paid route without payment, assert 402 plus requirements. Call `/catalogue`, assert shape.
+- [x] **A4. Upstream health.** If the upstream API is failing and there is no cached value, respond with 502 *before* the payment settles if the middleware allows (e.g. a warm-up fetch on boot plus a background refresh), so users are not charged for errors. Note the limitation in the README if it cannot be done cleanly.
+- [x] **A5. Integration test.** Start the server in a test, call each paid route without payment, assert 402 plus requirements. Call `/catalogue`, assert shape.
 - [ ] **A6. Deploy (optional, after the core works).** A public URL is nice for the "live link" and for judges. Anything simple (Railway, Fly, Render) works.
 - **Done when:** the spike client script from 0.2, pointed at the real server, pays for each of the 4 endpoints and gets data back.
 
