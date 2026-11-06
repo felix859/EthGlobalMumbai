@@ -2,7 +2,7 @@
 // everyone: tell the team first. See docs/superpowers/plans/ ("Contracts").
 
 // ---- Catalogue (server → agent, free endpoint) ----
-export type EndpointId = "weather" | "air-quality" | "hbar-price" | "headlines";
+export type EndpointId = "weather" | "air-quality" | "hbar-price" | "headlines" | "briefing";
 
 export interface CatalogueEntry {
   id: EndpointId;

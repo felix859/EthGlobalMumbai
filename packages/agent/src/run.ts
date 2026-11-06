@@ -54,7 +54,21 @@ const serverUrl = () => env("SERVER_URL", "http://localhost:3000");
 const defaultFetchCatalogue: RunDeps["fetchCatalogue"] = async () => {
   const r = await fetch(`${serverUrl()}/catalogue`);
   if (!r.ok) throw new Error(`Catalogue request failed: HTTP ${r.status}`);
-  return (await r.json()) as Catalogue;
+  const cat = (await r.json()) as Catalogue;
+  // Other sellers (e.g. the Analyst agent): EXTRA_CATALOGUE_URLS, comma separated. Each entry is stamped with the
+  // seller's own payee and origin; run.ts then refuses any seller that is not in the agent's trusted config.
+  for (const url of (process.env.EXTRA_CATALOGUE_URLS ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    try {
+      const er = await fetch(url);
+      if (!er.ok) continue; // an unavailable seller is skipped, not fatal
+      const extra = (await er.json()) as Catalogue;
+      const origin = new URL(url).origin;
+      for (const e of extra.endpoints) cat.endpoints.push({ ...e, payTo: extra.payTo, baseUrl: origin });
+    } catch {
+      /* skip unreachable seller */
+    }
+  }
+  return cat;
 };
 
 const defaultMakePay: RunDeps["makePay"] = (guard) =>
