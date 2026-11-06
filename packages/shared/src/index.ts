@@ -42,6 +42,8 @@ export type RunEvent =
   | { type: "denied"; endpointId: string; reason: string }
   | { type: "audit"; topicId: string; sequenceNumber: string }
   | { type: "audit_failed"; reason: string }
+  | { type: "receipt"; tokenId: string; serial: string; txId: string; hashscanUrl: string }
+  | { type: "receipt_failed"; reason: string }
   | { type: "answer"; text: string }
   | { type: "error"; message: string };
 
@@ -67,6 +69,9 @@ export interface AuditMessage {
 // ---- Defaults ----
 export const PORTS = { server: 3000, agent: 4000, web: 5173 } as const;
 export const MUMBAI = { lat: 19.076, lon: 72.8777 } as const;
+
+export const hashscanTokenUrl = (tokenId: string, serial: string, network: "testnet" | "mainnet" = "testnet") =>
+  `https://hashscan.io/${network}/token/${tokenId}/${serial}`;
 
 export const hashscanTxUrl = (txId: string, network: "testnet" | "mainnet" = "testnet") =>
   `https://hashscan.io/${network}/transaction/${encodeURIComponent(txId)}`;
