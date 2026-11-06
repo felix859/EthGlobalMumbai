@@ -55,6 +55,16 @@ export interface AgentConfig {
   network: string;
 }
 
+// ---- Health (agent → web, for the demo safety net) ----
+export interface HealthCheck { ok: boolean; detail: string; ms?: number }
+export interface HealthReport {
+  ok: boolean; // all checks passed
+  facilitator: HealthCheck;
+  server: HealthCheck;
+  agentBalance: HealthCheck & { tinybars?: string; low?: boolean };
+  checkedAt: number;
+}
+
 // ---- HCS audit message (agent → topic) ----
 export interface AuditMessage {
   v: 1;

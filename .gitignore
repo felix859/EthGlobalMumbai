@@ -7,3 +7,7 @@ dist/
 .DS_Store
 .vite/
 coverage/
+
+# demo recordings: keep only the sample fixture
+runs/*
+!runs/sample.json
