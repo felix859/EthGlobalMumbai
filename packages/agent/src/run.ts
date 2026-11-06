@@ -1,9 +1,10 @@
 // runAgent: the Claude tool-use loop. This is the seam used by the HTTP API (workstream #4).
 import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
-import { hashscanTxUrl, type AuditMessage, type Catalogue, type RunEvent } from "@pennyagent/shared";
+import { hashscanTokenUrl, hashscanTxUrl, type AuditMessage, type Catalogue, type RunEvent } from "@pennyagent/shared";
 import { BudgetGuard } from "./budget.js";
 import { createPayingFetch, type PayResult } from "./pay.js";
+import { mintReceipt, type Receipt, type ReceiptSummary } from "./receipt.js";
 
 export interface RunOptions {
   question: string;
@@ -18,6 +19,8 @@ export interface RunOptions {
 export interface RunDeps {
   fetchCatalogue: () => Promise<Catalogue>;
   makePay: (guard: BudgetGuard) => (url: string) => Promise<PayResult>;
+  /** Mints the HTS receipt NFT. Defaults to the real mint when RECEIPT_TOKEN_ID is set, else disabled. */
+  mintReceipt: ((s: ReceiptSummary) => Promise<Receipt>) | null;
   llm: { create: (p: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message> };
 }
 
@@ -71,7 +74,9 @@ export async function runAgent(opts: RunOptions): Promise<void> {
       fetchCatalogue: d.fetchCatalogue ?? defaultFetchCatalogue,
       makePay: d.makePay ?? defaultMakePay,
       llm: d.llm ?? defaultLlm(),
+      mintReceipt: d.mintReceipt !== undefined ? d.mintReceipt : process.env.RECEIPT_TOKEN_ID ? mintReceipt : null,
     };
+    const paid: bigint[] = [];
     const budget = BigInt(opts.budgetTinybars);
     emit({ type: "started", runId, budgetTinybars: opts.budgetTinybars });
 
@@ -110,6 +115,15 @@ export async function runAgent(opts: RunOptions): Promise<void> {
       if (calls.length === 0) {
         const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
         emit({ type: "answer", text: text || "(no answer)" });
+        // Receipt NFT (HTS). Never lets a failure break the run.
+        if (deps.mintReceipt && paid.length > 0) {
+          try {
+            const rc = await deps.mintReceipt({ runId, purchases: paid.length, totalTinybars: paid.reduce((a, b) => a + b, 0n) });
+            emit({ type: "receipt", ...rc, hashscanUrl: hashscanTokenUrl(rc.tokenId, rc.serial) });
+          } catch (e) {
+            emit({ type: "receipt_failed", reason: e instanceof Error ? e.message : String(e) });
+          }
+        }
         return;
       }
 
@@ -127,6 +141,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
           results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Purchase failed: ${r.reason}. Do not retry.` });
           continue;
         }
+        paid.push(r.amount);
         emit({
           type: "payment",
           endpointId: id,

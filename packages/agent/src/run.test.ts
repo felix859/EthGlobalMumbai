@@ -92,4 +92,39 @@ describe("runAgent", () => {
     expect(events.some((e) => e.type === "audit_failed")).toBe(true);
     expect(events.some((e) => e.type === "answer")).toBe(true);
   });
+
+  it("mints a receipt after a run that bought data, and emits it", async () => {
+    const events: RunEvent[] = [];
+    let seen: any;
+    await runAgent({
+      question: "q", budgetTinybars: "10000000", emit: (e) => events.push(e),
+      deps: {
+        fetchCatalogue: async () => cat, makePay: guardedPay(), llm: scripted([buy("weather"), text("ok")]),
+        mintReceipt: async (s) => { seen = s; return { tokenId: "0.0.5", serial: "1", txId: "0.0.1@1" }; },
+      },
+    });
+    expect(seen).toMatchObject({ purchases: 1, totalTinybars: 1_000_000n });
+    const r = events.find((e) => e.type === "receipt") as any;
+    expect(r.hashscanUrl).toBe("https://hashscan.io/testnet/token/0.0.5/1");
+  });
+
+  it("no receipt when nothing was bought", async () => {
+    const events: RunEvent[] = [];
+    let called = false;
+    await runAgent({
+      question: "q", budgetTinybars: "10000000", emit: (e) => events.push(e),
+      deps: { fetchCatalogue: async () => cat, makePay: guardedPay(), llm: scripted([text("no need")]), mintReceipt: async () => { called = true; throw new Error("x"); } },
+    });
+    expect(called).toBe(false);
+  });
+
+  it("a failed receipt mint emits receipt_failed and the answer still arrives", async () => {
+    const events: RunEvent[] = [];
+    await runAgent({
+      question: "q", budgetTinybars: "10000000", emit: (e) => events.push(e),
+      deps: { fetchCatalogue: async () => cat, makePay: guardedPay(), llm: scripted([buy("weather"), text("fine")]), mintReceipt: async () => { throw new Error("hts down"); } },
+    });
+    expect(events.some((e) => e.type === "answer")).toBe(true);
+    expect(events.find((e) => e.type === "receipt_failed")).toMatchObject({ reason: "hts down" });
+  });
 });
