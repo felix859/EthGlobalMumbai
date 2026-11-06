@@ -2,21 +2,27 @@
   "name": "pennyagent",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -n server,agent,web -c blue,green,magenta \"npm:dev:server\" \"npm:dev:agent\" \"npm:dev:web\"",
     "dev:server": "npm run dev -w @pennyagent/server",
     "dev:agent": "npm run dev -w @pennyagent/agent",
     "dev:web": "npm run dev -w @pennyagent/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "setup:hedera": "tsx --env-file=.env scripts/hedera-setup.ts"
   },
   "devDependencies": {
+    "@hiero-ledger/sdk": "^2.90.1",
     "@types/node": "^22.10.0",
     "concurrently": "^9.1.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
