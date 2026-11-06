@@ -13,7 +13,9 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run --passWithNoTests",
     "setup:hedera": "tsx --env-file=.env scripts/hedera-setup.ts",
-    "setup:receipt": "tsx --env-file=.env scripts/create-receipt-token.ts"
+    "setup:receipt": "tsx --env-file=.env scripts/create-receipt-token.ts",
+    "setup:analyst": "tsx --env-file=.env scripts/create-analyst.ts",
+    "dev:analyst": "npm run dev -w @pennyagent/analyst"
   },
   "devDependencies": {
     "@hiero-ledger/sdk": "^2.90.1",

@@ -13,5 +13,10 @@
     "@x402/core": "^2.30.0",
     "@x402/fetch": "^2.30.0",
     "@x402/hedera": "^2.30.0"
+  },
+  "exports": {
+    "./pay": "./src/pay.ts",
+    "./budget": "./src/budget.ts",
+    "./security": "./src/security.ts"
   }
 }
