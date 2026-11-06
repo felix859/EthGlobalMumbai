@@ -5,6 +5,7 @@ import { hashscanTokenUrl, hashscanTxUrl, type AuditMessage, type Catalogue, typ
 import { BudgetGuard } from "./budget.js";
 import { createPayingFetch, type PayResult } from "./pay.js";
 import { approvals, needsApproval, resolvePolicy, type ApprovalGate, type PolicyOptions } from "./policy.js";
+import { assertCatalogueTrusted, parseList, DEFAULT_MAX_RUN_BUDGET, DEFAULT_MAX_TOTAL_SPEND, safeEndpointUrl, validateRunInput } from "./security.js";
 import { mintReceipt, type Receipt, type ReceiptSummary } from "./receipt.js";
 
 export interface RunOptions {
@@ -15,6 +16,13 @@ export interface RunOptions {
   onPayment?: (p: AuditMessage) => void | Promise<void>;
   /** Per-run spending policy; unset fields fall back to env (MAX_PRICE_PER_CALL, APPROVAL_ABOVE_TINYBARS). */
   policy?: PolicyOptions;
+  /**
+   * The ONLY account the agent may pay. Defaults to env MERCHANT_ACCOUNT_ID. It is deliberately NOT taken from the
+   * server's catalogue: a compromised or spoofed server could otherwise name its own account and pass the allowlist.
+   */
+  trustedPayTo?: string | string[];
+  /** Origins the agent may pay besides SERVER_URL. Defaults to env TRUSTED_ORIGINS (comma separated). */
+  trustedOrigins?: string[];
   /** Where human decisions arrive. Defaults to the process-wide gate the HTTP API resolves. */
   gate?: ApprovalGate;
   /** Test seams; production uses the defaults. */
@@ -31,6 +39,10 @@ export interface RunDeps {
 
 const MAX_TURNS = 6;
 
+/** Spent by all runs since this process started (the per-run guard cannot see other runs). */
+let totalSpent = 0n;
+export const _resetTotalSpentForTests = () => (totalSpent = 0n);
+
 const env = (k: string, fallback?: string) => {
   const v = process.env[k] ?? fallback;
   if (v === undefined || v === "") throw new Error(`Missing env var ${k}`);
@@ -39,10 +51,24 @@ const env = (k: string, fallback?: string) => {
 
 const serverUrl = () => env("SERVER_URL", "http://localhost:3000");
 
-const defaultFetchCatalogue: RunDeps["fetchCatalogue"] = async () => {
+export const defaultFetchCatalogue: RunDeps["fetchCatalogue"] = async () => {
   const r = await fetch(`${serverUrl()}/catalogue`);
   if (!r.ok) throw new Error(`Catalogue request failed: HTTP ${r.status}`);
-  return (await r.json()) as Catalogue;
+  const cat = (await r.json()) as Catalogue;
+  // Other sellers (e.g. the Analyst agent): EXTRA_CATALOGUE_URLS, comma separated. Each entry is stamped with the
+  // seller's own payee and origin; run.ts then refuses any seller that is not in the agent's trusted config.
+  for (const url of (process.env.EXTRA_CATALOGUE_URLS ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    try {
+      const er = await fetch(url);
+      if (!er.ok) continue; // an unavailable seller is skipped, not fatal
+      const extra = (await er.json()) as Catalogue;
+      const origin = new URL(url).origin;
+      for (const e of extra.endpoints) cat.endpoints.push({ ...e, payTo: extra.payTo, baseUrl: origin });
+    } catch {
+      /* skip unreachable seller */
+    }
+  }
+  return cat;
 };
 
 const defaultMakePay: RunDeps["makePay"] = (guard) =>
@@ -82,16 +108,24 @@ export async function runAgent(opts: RunOptions): Promise<void> {
       mintReceipt: d.mintReceipt !== undefined ? d.mintReceipt : process.env.RECEIPT_TOKEN_ID ? mintReceipt : null,
     };
     const paid: bigint[] = [];
-    const budget = BigInt(opts.budgetTinybars);
-    emit({ type: "started", runId, budgetTinybars: opts.budgetTinybars });
+    const maxRun = BigInt(process.env.MAX_RUN_BUDGET_TINYBARS ?? DEFAULT_MAX_RUN_BUDGET);
+    const maxTotal = BigInt(process.env.MAX_TOTAL_SPEND_TINYBARS ?? DEFAULT_MAX_TOTAL_SPEND);
+    const { question: q, budget: requested } = validateRunInput(question, opts.budgetTinybars, maxRun);
+    const totalLeft = maxTotal - totalSpent;
+    if (totalLeft <= 0n) throw new Error("The agent's total spending limit has been reached; restart the agent to reset it");
+    const budget = requested < totalLeft ? requested : totalLeft; // never more than the process-wide cap allows
+    emit({ type: "started", runId, budgetTinybars: budget.toString() });
 
     const cat = await deps.fetchCatalogue();
+    const trusted = parseList(opts.trustedPayTo ?? process.env.MERCHANT_ACCOUNT_ID);
+    assertCatalogueTrusted(cat, trusted);
+    const trustedOrigins = [serverUrl(), ...parseList(opts.trustedOrigins ?? process.env.TRUSTED_ORIGINS)];
     const policy = resolvePolicy(opts.policy);
     const gate = opts.gate ?? approvals;
     const guard = new BudgetGuard({
       runBudget: budget,
       maxPerCall: policy.maxPerCall,
-      allowedPayTo: cat.payTo,
+      allowedPayTo: trusted,
       allowedAsset: env("PAYMENT_ASSET", "0.0.0"),
     });
     const payFor = deps.makePay(guard);
@@ -108,7 +142,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
         },
       },
     ];
-    const messages: Anthropic.MessageParam[] = [{ role: "user", content: question }];
+    const messages: Anthropic.MessageParam[] = [{ role: "user", content: q }];
     const model = env("CLAUDE_MODEL", "claude-sonnet-5-5");
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -145,7 +179,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
         const price = BigInt(entry.priceTinybars);
         if (needsApproval(policy, price) && guard.check({ amount: entry.priceTinybars, payTo: cat.payTo, asset: entry.asset }).ok) {
           const approvalId = gate.newId();
-          const decision = gate.request(approvalId, policy.approvalTimeoutMs); // register before announcing
+          const decision = gate.request(approvalId, policy.approvalTimeoutMs, runId); // register before announcing
           emit({ type: "approval_required", approvalId, endpointId: id, amountTinybars: entry.priceTinybars, timeoutMs: policy.approvalTimeoutMs, expiresAt: Date.now() + policy.approvalTimeoutMs });
           const outcome = await decision;
           emit({ type: "approval_resolved", approvalId, outcome });
@@ -156,13 +190,14 @@ export async function runAgent(opts: RunOptions): Promise<void> {
             continue;
           }
         }
-        const r = await payFor(`${server}${entry.path}`);
+        const r = await payFor(safeEndpointUrl(entry.baseUrl ?? server, entry.path, trustedOrigins));
         if (!r.ok) {
           emit({ type: "denied", endpointId: id, reason: r.reason });
           results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Purchase failed: ${r.reason}. Do not retry.` });
           continue;
         }
         paid.push(r.amount);
+        totalSpent += r.amount;
         emit({
           type: "payment",
           endpointId: id,

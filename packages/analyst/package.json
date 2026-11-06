@@ -1,0 +1,19 @@
+{
+  "name": "@pennyagent/analyst",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@pennyagent/agent": "*",
+    "@pennyagent/shared": "*",
+    "@x402/core": "^2.30.0",
+    "@x402/express": "^2.30.0",
+    "@x402/hedera": "^2.30.0",
+    "express": "^4.21.0"
+  },
+  "devDependencies": { "@types/express": "^4.17.21" }
+}

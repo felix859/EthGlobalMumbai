@@ -6,8 +6,8 @@ export interface GuardConfig {
   runBudget: bigint;
   /** Max for any single payment, in tinybars. */
   maxPerCall: bigint;
-  /** The only account the agent may pay. */
-  allowedPayTo: string;
+  /** The only account(s) the agent may pay. */
+  allowedPayTo: string | string[];
   /** The only asset the agent may pay with ("0.0.0" = HBAR). */
   allowedAsset: string;
 }
@@ -27,7 +27,12 @@ const AMOUNT_RE = /^[1-9][0-9]{0,17}$/;
 export class BudgetGuard {
   private _spent = 0n;
 
-  constructor(private readonly cfg: GuardConfig) {}
+  private readonly payees: Set<string>;
+
+  constructor(private readonly cfg: GuardConfig) {
+    this.payees = new Set(Array.isArray(cfg.allowedPayTo) ? cfg.allowedPayTo : [cfg.allowedPayTo]);
+    if (this.payees.size === 0) throw new Error("BudgetGuard needs at least one allowed payee");
+  }
 
   get spent(): bigint {
     return this._spent;
@@ -43,8 +48,8 @@ export class BudgetGuard {
     }
     const amount = BigInt(req.amount);
 
-    if (req.payTo !== this.cfg.allowedPayTo) {
-      return { ok: false, reason: `Payee ${req.payTo} is not the allowlisted merchant` };
+    if (!this.payees.has(req.payTo)) {
+      return { ok: false, reason: `Payee ${req.payTo} is not an allowlisted merchant` };
     }
     if (req.asset !== this.cfg.allowedAsset) {
       return { ok: false, reason: `Asset ${req.asset} is not allowed` };

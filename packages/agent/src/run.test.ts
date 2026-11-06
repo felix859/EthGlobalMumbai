@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { Catalogue, RunEvent } from "@pennyagent/shared";
-import { runAgent, type RunDeps } from "./run.js";
+import { runAgent, _resetTotalSpentForTests, type RunDeps } from "./run.js";
+import { beforeEach } from "vitest";
 import { ApprovalGate } from "./policy.js";
 import { BudgetGuard } from "./budget.js";
 import type { PayResult } from "./pay.js";
+
+beforeEach(() => _resetTotalSpentForTests());
+process.env.MERCHANT_ACCOUNT_ID = "0.0.111";
 
 const cat: Catalogue = {
   network: "hedera:testnet",
@@ -133,11 +137,13 @@ describe("runAgent", () => {
     const runWith = async (policy: any, decide: "approve" | "reject" | "none", llm = scripted([buy("hbar-price"), text("ok")])) => {
       const events: RunEvent[] = [];
       const gate = new ApprovalGate();
+      let runId = "";
       await runAgent({
         question: "q", budgetTinybars: "50000000", policy, gate,
         emit: (e) => {
           events.push(e);
-          if (e.type === "approval_required" && decide !== "none") queueMicrotask(() => gate.resolve(e.approvalId, decide === "approve"));
+          if (e.type === "started") runId = e.runId;
+          if (e.type === "approval_required" && decide !== "none") queueMicrotask(() => gate.resolve(e.approvalId, decide === "approve", runId));
         },
         deps: { fetchCatalogue: async () => cat, makePay: guardedPay(), llm },
       });
@@ -184,6 +190,94 @@ describe("runAgent", () => {
     it("a malformed policy fails the run cleanly", async () => {
       const ev = await runWith({ approvalAboveTinybars: "abc" }, "none");
       expect(ev.at(-1)?.type).toBe("error");
+    });
+  });
+
+  describe("security hardening", () => {
+    const base = { question: "q", budgetTinybars: "10000000" };
+    const mk = (over: any = {}, llm = scripted([buy("weather"), text("ok")])) => {
+      const events: RunEvent[] = [];
+      return runAgent({ ...base, ...over, emit: (e) => events.push(e), deps: { fetchCatalogue: async () => cat, makePay: guardedPay(), llm, ...over.deps } }).then(() => events);
+    };
+
+    it("refuses to run when the server names a different payee than the configured merchant", async () => {
+      const ev = await mk({ deps: { fetchCatalogue: async () => ({ ...cat, payTo: "0.0.666" }) } });
+      expect(ev.at(-1)).toMatchObject({ type: "error" });
+      expect((ev.at(-1) as any).message).toMatch(/does not match the configured merchant/);
+      expect(ev.some((e) => e.type === "payment")).toBe(false);
+    });
+    it("refuses to run when no merchant is configured", async () => {
+      const saved = process.env.MERCHANT_ACCOUNT_ID;
+      delete process.env.MERCHANT_ACCOUNT_ID;
+      const ev = await mk();
+      process.env.MERCHANT_ACCOUNT_ID = saved;
+      expect((ev.at(-1) as any).message).toMatch(/MERCHANT_ACCOUNT_ID must be configured/);
+    });
+    it("rejects a hostile endpoint path from the catalogue", async () => {
+      const evil = { ...cat, endpoints: [{ ...cat.endpoints[0], path: "//evil.com/steal" }] };
+      const ev = await mk({ deps: { fetchCatalogue: async () => evil } });
+      expect(ev.some((e) => e.type === "payment")).toBe(false);
+      expect(ev.some((e) => e.type === "error")).toBe(true);
+    });
+    it("rejects an oversized or malformed budget before doing anything", async () => {
+      for (const b of ["999999999999", "-1", "abc", "0"]) {
+        const ev = await mk({ budgetTinybars: b });
+        expect(ev.map((e) => e.type)).toEqual(["error"]);
+      }
+    });
+    it("rejects an over-long question", async () => {
+      const ev = await mk({ question: "x".repeat(5000) });
+      expect(ev.map((e) => e.type)).toEqual(["error"]);
+    });
+    it("a process-wide spending cap stops later runs", async () => {
+      const saved = process.env.MAX_TOTAL_SPEND_TINYBARS;
+      process.env.MAX_TOTAL_SPEND_TINYBARS = "1500000"; // room for one 1,000,000 purchase, not two
+      const first = await mk({}, scripted([buy("weather"), text("ok")]));
+      const second = await mk({}, scripted([buy("weather"), text("ok")]));
+      const third = await mk({}, scripted([buy("weather"), text("ok")]));
+      process.env.MAX_TOTAL_SPEND_TINYBARS = saved ?? "";
+      if (saved === undefined) delete process.env.MAX_TOTAL_SPEND_TINYBARS;
+      expect(first.some((e) => e.type === "payment")).toBe(true);
+      expect(second.some((e) => e.type === "payment")).toBe(false); // only 500,000 left < 1,000,000 price
+      expect((third.at(-1) as any).type).toMatch(/answer|error/);
+    });
+  });
+
+  describe("multiple trusted sellers", () => {
+    const seller = { id: "weather" as const, path: "/api/briefing", description: "b", priceTinybars: "2000000", asset: "0.0.0", payTo: "0.0.222", baseUrl: "http://localhost:3100" };
+    const mk2 = async (entry: any, trustedPayTo: any, trustedOrigins?: string[]) => {
+      const events: RunEvent[] = [];
+      const urls: string[] = [];
+      const makePay: RunDeps["makePay"] = (guard) => async (url) => {
+        urls.push(url);
+        const v = guard.check({ amount: seller.priceTinybars, payTo: entry.payTo ?? cat.payTo, asset: "0.0.0" });
+        if (!v.ok) return { ok: false, reason: v.reason };
+        guard.record(2_000_000n);
+        return { ok: true, data: { ok: 1 }, txId: "0.0.1@2", amount: 2_000_000n, asset: "0.0.0" };
+      };
+      await runAgent({
+        question: "q", budgetTinybars: "10000000", trustedPayTo, trustedOrigins, emit: (e) => events.push(e),
+        deps: { fetchCatalogue: async () => ({ ...cat, endpoints: [entry] }), makePay, llm: scripted([buy("weather"), text("ok")]) },
+      });
+      return { events, urls };
+    };
+    it("pays a second trusted seller on its own origin", async () => {
+      const { events, urls } = await mk2(seller, ["0.0.111", "0.0.222"], ["http://localhost:3100"]);
+      expect(events.some((e) => e.type === "payment")).toBe(true);
+      expect(urls[0]).toBe("http://localhost:3100/api/briefing");
+    });
+    it("refuses to run if an entry names a payee that is not configured", async () => {
+      const { events } = await mk2(seller, ["0.0.111"], ["http://localhost:3100"]);
+      expect((events.at(-1) as any).message).toMatch(/not a configured merchant/);
+    });
+    it("refuses an entry whose origin is not trusted", async () => {
+      const { events } = await mk2({ ...seller, baseUrl: "http://evil.example" }, ["0.0.111", "0.0.222"], []);
+      expect(events.some((e) => e.type === "payment")).toBe(false);
+      expect(events.some((e) => e.type === "error")).toBe(true);
+    });
+    it("comma-separated env style list works", async () => {
+      const { events } = await mk2(seller, "0.0.111, 0.0.222", ["http://localhost:3100"]);
+      expect(events.some((e) => e.type === "payment")).toBe(true);
     });
   });
 });

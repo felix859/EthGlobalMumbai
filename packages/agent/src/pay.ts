@@ -5,6 +5,7 @@ import { wrapFetchWithPayment } from "@x402/fetch";
 import { createClientHederaSigner, PrivateKey } from "@x402/hedera"; // single SDK copy: see docs/spike-notes.md
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { BudgetGuard } from "./budget.js";
+import { MAX_DATA_CHARS, truncateForModel } from "./security.js";
 
 type Requirement = { amount: string; payTo: string; asset: string };
 export interface PolicyState {
@@ -51,7 +52,9 @@ export function createPayingFetch(opts: PayingFetchOptions) {
     },
     policies: [makeGuardPolicy(opts.guard, state) as any],
   });
-  const pay = wrapFetchWithPayment(fetch, client);
+  // A redirect could carry the signed payment to another host: never follow one.
+  const noRedirect: typeof fetch = (input, init) => fetch(input, { ...init, redirect: "error" });
+  const pay = wrapFetchWithPayment(noRedirect, client);
   const http = new x402HTTPClient(client);
 
   return async function payFor(url: string): Promise<PayResult> {
@@ -74,6 +77,18 @@ export function createPayingFetch(opts: PayingFetchOptions) {
     }
     const amount = BigInt(accepted.amount);
     opts.guard.record(amount);
-    return { ok: true, data: await res.json(), txId: settle.transaction, amount, asset: accepted.asset };
+    // Money has moved. Read the body defensively: size-capped, and never throw after payment.
+    let data: unknown;
+    try {
+      const raw = truncateForModel(await res.text(), MAX_DATA_CHARS);
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = raw;
+      }
+    } catch {
+      data = "(response body could not be read)";
+    }
+    return { ok: true, data, txId: settle.transaction, amount, asset: accepted.asset };
   };
 }
