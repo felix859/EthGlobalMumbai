@@ -23,6 +23,8 @@ export function AskPanel({ busy, onAsk }: { busy: boolean; onAsk: (req: AskReque
       const req: AskRequest = { question: question.trim(), budgetTinybars: parseHbar(budget), maxPerCallTinybars: parseHbar(cap) };
       if (askAbove) req.approvalAboveTinybars = parseHbar(threshold);
       if (req.budgetTinybars === "0") return setError("Budget must be more than 0");
+      if (req.maxPerCallTinybars === "0") return setError("Max for one purchase must be more than 0");
+      if (req.approvalAboveTinybars === "0") return setError("The approval threshold must be more than 0");
       onAsk(req);
     } catch (err) {
       setError((err as Error).message);

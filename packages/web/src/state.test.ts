@@ -73,3 +73,23 @@ describe("helpers", () => {
     for (const bad of ["", "-1", "1.123456789", "abc", "1e3", ".5"]) expect(() => parseHbar(bad)).toThrow();
   });
 });
+
+describe("robustness (third review)", () => {
+  it("_seed shows the run immediately, so approvals work even if `started` is missed", () => {
+    const s = play([pay("weather", "1")], reduceRun(initialRunState, { type: "_seed", runId: "r9", budgetTinybars: "5000000" }));
+    expect(s).toMatchObject({ status: "running", runId: "r9", budgetTinybars: "5000000", spentTinybars: "1" });
+  });
+  it("_seed resets a previous run", () => {
+    const old = play([{ type: "started", runId: "r1", budgetTinybars: "9" }, pay("weather", "1")]);
+    expect(reduceRun(old, { type: "_seed", runId: "r2" }).items).toEqual([]);
+  });
+  it("a replayed `started` for the same run keeps the state consistent", () => {
+    const seeded = reduceRun(initialRunState, { type: "_seed", runId: "r1", budgetTinybars: "9" });
+    expect(play([{ type: "started", runId: "r1", budgetTinybars: "9" }, pay("weather", "1")], seeded).items).toHaveLength(1);
+  });
+  it("drops events with malformed amounts instead of crashing", () => {
+    const s = play([{ type: "started", runId: "r", budgetTinybars: "9" }]);
+    expect(reduceRun(s, { ...pay("weather", "1"), amountTinybars: "1e9" } as RunEvent)).toBe(s);
+    expect(reduceRun(s, { type: "approval_required", approvalId: "a", endpointId: "x", amountTinybars: "-1", timeoutMs: 1, expiresAt: 1 })).toBe(s);
+  });
+});

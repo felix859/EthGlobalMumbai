@@ -263,9 +263,11 @@ describe("runAgent", () => {
       expect(events.some((e) => e.type === "payment")).toBe(true);
       expect(urls[0]).toBe("http://localhost:3100/api/briefing");
     });
-    it("refuses to run if an entry names a payee that is not configured", async () => {
-      const { events } = await mk2(seller, ["0.0.111"], ["http://localhost:3100"]);
-      expect((events.at(-1) as any).message).toMatch(/not a configured merchant/);
+    it("drops an extra seller whose payee is not configured, without blocking the run", async () => {
+      const { events, urls } = await mk2(seller, ["0.0.111"], ["http://localhost:3100"]);
+      expect(urls).toHaveLength(0);
+      expect(events.some((e) => e.type === "payment")).toBe(false);
+      expect(events.at(-1)?.type).toBe("answer"); // the run itself still completes
     });
     it("refuses an entry whose origin is not trusted, without paying", async () => {
       const { events, urls } = await mk2({ ...seller, baseUrl: "http://evil.example" }, ["0.0.111", "0.0.222"], []);
@@ -342,9 +344,10 @@ describe("runAgent", () => {
         return { ok: false, reason: "Endpoint returned HTTP 500", chargedTinybars: 1_000_000n };
       };
       const { events } = await run("1500000", scripted([buy("weather"), buy("air-quality", 2), text("ok")]), makePay);
+      // The first purchase was charged (counted), so the second is refused up front for lack of budget.
       expect(events.filter((e) => e.type === "denied").map((e: any) => e.reason)).toEqual([
         "Endpoint returned HTTP 500",
-        "Endpoint returned HTTP 500",
+        "Price 2000000 exceeds the remaining budget of 500000",
       ]);
     });
 
@@ -367,6 +370,52 @@ describe("runAgent", () => {
       expect(hbar(1n)).toBe("0.00000001");
       expect(hbar(100_000_000n)).toBe("1");
       expect(hbar("3000000")).toBe("0.03");
+    });
+  });
+
+  describe("third review fixes", () => {
+    const run2 = async (catalogue: Catalogue, policy: any, pay402Amount: string) => {
+      const events: RunEvent[] = [];
+      const gate = new ApprovalGate();
+      let paidCalls = 0;
+      const makePay: RunDeps["makePay"] = (guard) => async (_url, opts) => {
+        paidCalls++;
+        const v = guard.spend({ amount: pay402Amount, payTo: "0.0.111", asset: "0.0.0" }, opts?.maxAmount);
+        return v.ok ? { ok: true, data: {}, txId: "t", amount: BigInt(pay402Amount), asset: "0.0.0" } : { ok: false, reason: v.reason };
+      };
+      await runAgent({ question: "q", budgetTinybars: "50000000", policy, gate, emit: (e) => events.push(e), deps: { fetchCatalogue: async () => catalogue, makePay, llm: scripted([buy("weather"), text("ok")]) } });
+      return { events, paidCalls };
+    };
+    const one = (o: Partial<Catalogue["endpoints"][number]>): Catalogue => ({ ...cat, endpoints: [{ ...cat.endpoints[0], ...o }] });
+
+    it("advertising a price above the cap does not skip approval: it is refused outright", async () => {
+      vi.stubEnv("MAX_PRICE_PER_CALL", "10000000");
+      const { events, paidCalls } = await run2(one({ priceTinybars: "50000000" }), { approvalAboveTinybars: "2000000" }, "10000000");
+      expect(paidCalls).toBe(0);
+      expect(events.some((e) => e.type === "payment")).toBe(false);
+      expect((events.find((e) => e.type === "denied") as any).reason).toMatch(/per-call cap/);
+    });
+    it("advertising a wrong asset does not skip approval: it is refused outright", async () => {
+      const { events, paidCalls } = await run2(one({ asset: "0.0.999", priceTinybars: "5000000" }), { approvalAboveTinybars: "2000000" }, "5000000");
+      expect(paidCalls).toBe(0);
+      expect((events.find((e) => e.type === "denied") as any).reason).toMatch(/Asset 0.0.999 is not allowed/);
+    });
+    it("a caller cannot raise the operator's per-call cap", async () => {
+      vi.stubEnv("MAX_PRICE_PER_CALL", "2000000");
+      const { events, paidCalls } = await run2(one({ priceTinybars: "5000000" }), { maxPerCallTinybars: "100000000" }, "5000000");
+      expect(paidCalls).toBe(0);
+      expect((events.find((e) => e.type === "denied") as any).reason).toMatch(/per-call cap of 2000000/);
+    });
+    it("a caller cannot switch off the operator's approval threshold", async () => {
+      vi.stubEnv("APPROVAL_ABOVE_TINYBARS", "500000");
+      const { events } = await run2(one({ priceTinybars: "1000000" }), { approvalAboveTinybars: "0", approvalTimeoutMs: 20 }, "1000000");
+      expect(events.some((e) => e.type === "approval_required")).toBe(true);
+    });
+    it("TRUSTED_PAYEES extends who a buyer may pay; MERCHANT_ACCOUNT_ID alone is the default", async () => {
+      vi.stubEnv("TRUSTED_PAYEES", "0.0.111,0.0.222");
+      const two: Catalogue = { ...cat, endpoints: [{ ...cat.endpoints[0], payTo: "0.0.222", baseUrl: "http://localhost:3000" }] };
+      const { paidCalls } = await run2(two, {}, "1000000");
+      expect(paidCalls).toBe(1);
     });
   });
 });

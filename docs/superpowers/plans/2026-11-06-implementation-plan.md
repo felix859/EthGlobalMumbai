@@ -196,11 +196,11 @@ Files: `packages/agent/src/*`.
 
 Files: `packages/web/src/*`. Vite + React + TypeScript. **Build against mock events first** so you do not wait for B: a `?mock=1` flag replays a canned event list.
 
-- [ ] **C1. Ask form.** Question input, budget input (in HBAR; convert to tinybars), Run button, three example-question chips (for example "Should I carry an umbrella in Mumbai today and is HBAR up?").
-- [ ] **C2. Live run view** (consumes SSE): streaming "thinking" lines, a **budget meter** (spent/remaining) that updates on each `payment`, a payment feed where each row shows endpoint, price, and a **HashScan link** (`hashscanUrl`), and a distinct red state for `denied` events with the reason. Final answer card at the end.
-- [ ] **C3. Audit log panel.** Poll the public mirror node for the HCS topic (`/api/v1/topics/{topicId}/messages`, base64-decode each message, parse `AuditMessage`) every 3 s and list them, with a link to the topic on HashScan. This panel proves the log is independent of our agent.
-- [ ] **C4. Agent wallet header.** Show the agent and merchant account ids (from `/api/config`) with HashScan links, and the network.
-- [ ] **C5. Polish for the demo.** Dark theme, large type for the screen-share, empty and error states, no layout shift as events stream in. Keep it to **one page**.
+- [x] **C1. Ask form.** Question input, budget input (in HBAR; convert to tinybars), Run button, three example-question chips (for example "Should I carry an umbrella in Mumbai today and is HBAR up?").
+- [x] **C2. Live run view** (consumes SSE): streaming "thinking" lines, a **budget meter** (spent/remaining) that updates on each `payment`, a payment feed where each row shows endpoint, price, and a **HashScan link** (`hashscanUrl`), and a distinct red state for `denied` events with the reason. Final answer card at the end.
+- [x] **C3. Audit log panel.** Poll the public mirror node for the HCS topic (`/api/v1/topics/{topicId}/messages`, base64-decode each message, parse `AuditMessage`) every 3 s and list them, with a link to the topic on HashScan. This panel proves the log is independent of our agent.
+- [x] **C4. Agent wallet header.** Show the agent and merchant account ids (from `/api/config`) with HashScan links, and the network.
+- [x] **C5. Polish for the demo.** Dark theme, large type for the screen-share, empty and error states, no layout shift as events stream in. Keep it to **one page**.
 - **Done when:** with the real agent running, a first-time viewer can ask a question and, without any explanation, see money move and click through to a HashScan transaction.
 
 ## Workstream D: Ship (start day one, finish last)

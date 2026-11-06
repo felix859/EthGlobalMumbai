@@ -7,8 +7,12 @@ export interface AgentApi {
   config(): Promise<AgentConfig>;
   health(): Promise<HealthReport>;
   ask(req: AskRequest): Promise<{ runId: string }>;
-  /** Streams a run's events. Returns a function that stops listening. */
-  subscribe(runId: string, onEvent: (e: RunEvent) => void, onError: (message: string) => void): () => void;
+  /**
+   * Streams a run's events (the API replays earlier events first). `onEnd` fires when the server says the run is
+   * fully finished, which is AFTER the answer: receipt and audit events can still follow the answer.
+   * Returns a function that stops listening.
+   */
+  subscribe(runId: string, onEvent: (e: RunEvent) => void, onError: (message: string) => void, onEnd?: () => void): () => void;
   approve(runId: string, approvalId: string, approve: boolean): Promise<boolean>;
   /** Replays the last recorded run (demo safety net). */
   replay(): Promise<{ runId: string }>;
@@ -43,9 +47,16 @@ export function realApi(base: string): AgentApi {
     approve: (runId, approvalId, approve) =>
       post(`/api/runs/${encodeURIComponent(runId)}/approve`, { approvalId, approve }).then((r) => json<{ ok: boolean }>(r)).then((r) => r.ok),
     replay: () => post("/api/replay").then((r) => json<{ runId: string }>(r)),
-    subscribe(runId, onEvent, onError) {
+    subscribe(runId, onEvent, onError, onEnd) {
       const es = new EventSource(url(`/api/runs/${encodeURIComponent(runId)}/events`));
       let finished = false;
+      // The server sends a named `end` event once the run (including receipt and audit writes) is done. Closing here
+      // also stops EventSource from reconnecting, which would replay the whole run again.
+      es.addEventListener("end", () => {
+        finished = true;
+        es.close();
+        onEnd?.();
+      });
       es.onmessage = (m) => {
         let v: unknown;
         try {
@@ -55,10 +66,6 @@ export function realApi(base: string): AgentApi {
         }
         if (!isRunEvent(v)) return;
         onEvent(v);
-        if (v.type === "answer" || v.type === "error") {
-          finished = true;
-          es.close();
-        }
       };
       es.onerror = () => {
         if (!finished) onError("Lost the connection to the agent");
