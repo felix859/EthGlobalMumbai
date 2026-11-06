@@ -1,0 +1,20 @@
+{
+  "name": "@pennyagent/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pennyagent-mcp": "src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx --env-file-if-exists=../../.env src/index.ts",
+    "typecheck": "tsc -p .",
+    "smoke": "tsx --env-file-if-exists=../../.env src/smoke.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@pennyagent/agent": "*",
+    "@pennyagent/shared": "*",
+    "zod": "^4.6.7"
+  }
+}

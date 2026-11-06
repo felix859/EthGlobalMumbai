@@ -5,7 +5,7 @@ import { hashscanTokenUrl, hashscanTxUrl, type AuditMessage, type Catalogue, typ
 import { BudgetGuard } from "./budget.js";
 import { createPayingFetch, type PayResult } from "./pay.js";
 import { approvals, needsApproval, resolvePolicy, type ApprovalGate, type PolicyOptions } from "./policy.js";
-import { DEFAULT_MAX_RUN_BUDGET, DEFAULT_MAX_TOTAL_SPEND, safeEndpointUrl, validateRunInput } from "./security.js";
+import { assertCatalogueTrusted, parseList, DEFAULT_MAX_RUN_BUDGET, DEFAULT_MAX_TOTAL_SPEND, safeEndpointUrl, validateRunInput } from "./security.js";
 import { mintReceipt, type Receipt, type ReceiptSummary } from "./receipt.js";
 
 export interface RunOptions {
@@ -51,7 +51,7 @@ const env = (k: string, fallback?: string) => {
 
 const serverUrl = () => env("SERVER_URL", "http://localhost:3000");
 
-const defaultFetchCatalogue: RunDeps["fetchCatalogue"] = async () => {
+export const defaultFetchCatalogue: RunDeps["fetchCatalogue"] = async () => {
   const r = await fetch(`${serverUrl()}/catalogue`);
   if (!r.ok) throw new Error(`Catalogue request failed: HTTP ${r.status}`);
   const cat = (await r.json()) as Catalogue;
@@ -117,15 +117,9 @@ export async function runAgent(opts: RunOptions): Promise<void> {
     emit({ type: "started", runId, budgetTinybars: budget.toString() });
 
     const cat = await deps.fetchCatalogue();
-    const list = (v: string | string[] | undefined) =>
-      (Array.isArray(v) ? v : (v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
-    const trusted = list(opts.trustedPayTo ?? process.env.MERCHANT_ACCOUNT_ID);
-    if (trusted.length === 0) throw new Error("MERCHANT_ACCOUNT_ID must be configured: the agent will not trust the server to name its own payee");
-    if (!trusted.includes(cat.payTo)) throw new Error(`Catalogue payee ${cat.payTo} does not match the configured merchant ${trusted.join(",")}; refusing to run`);
-    for (const e of cat.endpoints) {
-      if (e.payTo !== undefined && !trusted.includes(e.payTo)) throw new Error(`Endpoint ${e.id} names payee ${e.payTo}, which is not a configured merchant; refusing to run`);
-    }
-    const trustedOrigins = [serverUrl(), ...list(opts.trustedOrigins ?? process.env.TRUSTED_ORIGINS)];
+    const trusted = parseList(opts.trustedPayTo ?? process.env.MERCHANT_ACCOUNT_ID);
+    assertCatalogueTrusted(cat, trusted);
+    const trustedOrigins = [serverUrl(), ...parseList(opts.trustedOrigins ?? process.env.TRUSTED_ORIGINS)];
     const policy = resolvePolicy(opts.policy);
     const gate = opts.gate ?? approvals;
     const guard = new BudgetGuard({

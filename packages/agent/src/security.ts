@@ -8,6 +8,22 @@ export const DEFAULT_MAX_TOTAL_SPEND = 1_000_000_000n;
 /** Data returned by an endpoint is capped before it reaches the model (token cost and context stuffing). */
 export const MAX_DATA_CHARS = 8_000;
 
+/** Parses "a, b" or ["a","b"] into a clean list. */
+export const parseList = (v: string | string[] | undefined): string[] =>
+  (Array.isArray(v) ? v : (v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
+
+/**
+ * Refuses a catalogue that names any payee the buyer has not itself configured. The allowlist always comes from the
+ * buyer's own config, never from the catalogue, so a spoofed or compromised seller cannot name its own account.
+ */
+export function assertCatalogueTrusted(cat: { payTo: string; endpoints: { id: string; payTo?: string }[] }, trusted: string[]): void {
+  if (trusted.length === 0) throw new Error("MERCHANT_ACCOUNT_ID must be configured: the agent will not trust the server to name its own payee");
+  if (!trusted.includes(cat.payTo)) throw new Error(`Catalogue payee ${cat.payTo} does not match the configured merchant ${trusted.join(",")}; refusing to run`);
+  for (const e of cat.endpoints) {
+    if (e.payTo !== undefined && !trusted.includes(e.payTo)) throw new Error(`Endpoint ${e.id} names payee ${e.payTo}, which is not a configured merchant; refusing to run`);
+  }
+}
+
 export function validateRunInput(
   question: unknown,
   budget: unknown,
