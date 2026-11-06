@@ -119,7 +119,7 @@ cp .env.example .env          # fill in account ids and keys; testnet keys only,
 npm run setup:hedera          # creates the merchant account and the HCS audit topic
 npm run setup:receipt         # creates the receipt NFT collection
 npm test                      # unit tests
-npm run dev                   # server, agent and web together 🚧 (server and web are still being built)
+npm run dev                   # server, agent and web together 🚧 (web is still being built)
 ```
 
 ## Limitations (honest list)
@@ -127,7 +127,7 @@ npm run dev                   # server, agent and web together 🚧 (server and 
 - Testnet only; no mainnet funds were used.
 - The agent trusts the configured facilitator to settle; it can only settle the exact transfer the agent signed.
 - A model can waste budget on allowed-but-useless purchases. The caps bound the damage; they do not judge value.
-- 🚧 Data endpoints wrap free public APIs and are cached for 60 seconds.
+- Data endpoints wrap free public APIs (Open-Meteo, CoinGecko, Hacker News) and are cached for 60 seconds. If an upstream fails, the last good value is served (marked `stale`) for up to 10 minutes; after that the server answers 502 *before* asking for payment, so a buyer is never charged for data it cannot get.
 
 ## Team
 
