@@ -14,6 +14,7 @@
     "test": "vitest run --passWithNoTests",
     "setup:hedera": "tsx --env-file=.env scripts/hedera-setup.ts",
     "setup:receipt": "tsx --env-file=.env scripts/create-receipt-token.ts",
+    "setup:identity": "tsx --env-file=.env scripts/register-agent.ts",
     "setup:analyst": "tsx --env-file=.env scripts/create-analyst.ts",
     "dev:analyst": "npm run dev -w @pennyagent/analyst"
   },

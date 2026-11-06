@@ -69,6 +69,10 @@ export interface AgentConfig {
   merchantAccount: string;
   agentAccount: string;
   network: string;
+  /** HCS-14 style Universal Agent ID, if the agent has been registered (npm run setup:identity). */
+  uaid?: string;
+  /** Topic holding the agent's published profile message. */
+  identityTopicId?: string;
 }
 
 // ---- Health (agent → web, for the demo safety net) ----
