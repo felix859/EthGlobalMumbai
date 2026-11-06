@@ -58,7 +58,7 @@ A security review and an independent code review, with findings and fixes: [docs
 | Service | What for |
 |---|---|
 | **x402 `exact` scheme on `hedera:testnet`** | Every data purchase, settled in HBAR via the Blocky402 facilitator |
-| **Hedera Consensus Service (HCS)** | Public audit log: one message per payment, readable from the mirror node 🚧 |
+| **Hedera Consensus Service (HCS)** | Public audit log: one message per payment, readable from the mirror node ([topic 0.0.11341094](https://hashscan.io/testnet/topic/0.0.11341094)) |
 | **Hedera Token Service (HTS)** | One receipt NFT per run, recording what was bought and what it cost |
 
 No Solidity contracts: everything is the JS/TS SDK and the x402 packages.
@@ -121,6 +121,7 @@ cp .env.example .env          # fill in account ids and keys; testnet keys only,
 npm run setup:hedera          # creates the merchant account and the HCS audit topic
 npm run setup:receipt         # creates the receipt NFT collection
 npm test                      # unit tests
+npm run e2e                   # one real paid run from the CLI (needs the server running), prints HashScan links
 npm run dev                   # server, agent and web together 🚧 (web is still being built)
 ```
 
