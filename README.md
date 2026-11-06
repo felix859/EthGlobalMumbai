@@ -2,9 +2,9 @@
 
 **An AI agent with its own Hedera wallet and a hard budget. It decides what data is worth buying, pays for it over x402 on Hedera with no human in the loop, and leaves an on-chain paper trail.**
 
-Built at ETHGlobal Mumbai 2026. Target prize: **Hedera, "AI Agents That Pay: x402 on Hedera"**.
+Built at ETHGlobal Mumbai 2026. Prize tracks: **Hedera, "AI Agents That Pay: x402 on Hedera"** and **Hedera, "No Solidity Allowed"** ([checklist with evidence](docs/submission/prize-checklist.md)).
 
-> **Status: work in progress.** Sections marked 🚧 are filled in as the team lands each part. Task board: [GitHub issues](https://github.com/felix859/EthGlobalMumbai/issues).
+> **Status:** the agent core, data server, dashboard, Analyst agent and MCP server are built and tested; the agent's HTTP API and audit logger are in progress. Sections marked 🚧 are filled in at submission. Task board: [GitHub issues](https://github.com/felix859/EthGlobalMumbai/issues).
 
 ## The idea
 
@@ -58,20 +58,27 @@ A security review and an independent code review, with findings and fixes: [docs
 | Service | What for |
 |---|---|
 | **x402 `exact` scheme on `hedera:testnet`** | Every data purchase, settled in HBAR via the Blocky402 facilitator |
-| **Hedera Consensus Service (HCS)** | Public audit log: one message per payment, readable from the mirror node 🚧 |
-| **Hedera Token Service (HTS)** | One receipt NFT per run, recording what was bought and what it cost |
+| **Hedera Consensus Service (HCS)** | Public audit log (one message per payment) and the agent's identity profile |
+| **Mirror Node REST API** | The dashboard reads the audit log and the agent's balance straight from the public mirror node |
+| **Hedera Token Service (HTS)** | One receipt NFT per run, recording what was bought and what it cost (payments themselves settle in HBAR) |
 
 No Solidity contracts: everything is the JS/TS SDK and the x402 packages.
 
 ## Proof it works
 
-Real testnet transactions from development:
+Real testnet transactions, each checked on the public mirror node (`SUCCESS`):
 
-- First x402 payment, agent → merchant, 0.01 HBAR: [HashScan](https://hashscan.io/testnet/transaction/0.0.7162784@1793978281.672658259)
-- Receipt NFT collection `0.0.11341392`, serial 1: [HashScan](https://hashscan.io/testnet/token/0.0.11341392/1)
-- HCS audit topic `0.0.11341094`: [HashScan](https://hashscan.io/testnet/topic/0.0.11341094)
+| What | Transaction |
+|---|---|
+| First x402 payment, agent → merchant, 0.01 HBAR | [0.0.7162784@1793978281.672658259](https://hashscan.io/testnet/transaction/0.0.7162784@1793978281.672658259) |
+| Agent pays the data server for `weather`, 0.01 HBAR, logged to HCS | [0.0.7162784@1793983625.495026253](https://hashscan.io/testnet/transaction/0.0.7162784@1793983625.495026253) · [audit topic 0.0.11341094](https://hashscan.io/testnet/topic/0.0.11341094) |
+| Agent-to-agent, hop 1: buyer → Analyst, 0.03 HBAR | [0.0.7162784@1793980336.325585694](https://hashscan.io/testnet/transaction/0.0.7162784@1793980336.325585694) |
+| Agent-to-agent, hop 2: Analyst → data merchant, 0.01 HBAR | [0.0.7162784@1793980337.958678541](https://hashscan.io/testnet/transaction/0.0.7162784@1793980337.958678541) |
+| Same chain, bought by a real MCP client through `packages/mcp` | [hop 1](https://hashscan.io/testnet/transaction/0.0.7162784@1793980484.277937785) · [hop 2](https://hashscan.io/testnet/transaction/0.0.7162784@1793980484.579713018) |
+| Receipt NFTs (HTS collection `0.0.11341392`) | [serial 1](https://hashscan.io/testnet/token/0.0.11341392/1) · [serial 2](https://hashscan.io/testnet/token/0.0.11341392/2) |
+| Agent identity profile (HCS) | [topic 0.0.11341592](https://hashscan.io/testnet/topic/0.0.11341592) |
 
-🚧 Final demo run: transaction ids, screenshots and the demo video link are added here at the end.
+🚧 Final demo run through the dashboard: its transaction ids and the demo video link are added here at submission.
 
 ## Agents that pay each other
 
@@ -105,14 +112,14 @@ packages/analyst  seller+buyer agent: sells briefings, buys its data            
 packages/mcp      MCP server exposing the guarded wallet as tools
 scripts/          one-off Hedera setup (merchant account, audit topic, receipt NFT)
 spike/            the first working x402 payment, kept as a reference
-docs/             design spec, implementation plan, spike notes, security review
+docs/             design spec, plan, spike notes, security reviews, MCP guide, submission material
 ```
 
 Details: [design spec](docs/superpowers/specs/2026-11-06-pennyagent-design.md) · [implementation plan](docs/superpowers/plans/2026-11-06-implementation-plan.md) · [spike notes](docs/spike-notes.md).
 
 ## Quick start
 
-Requirements: Node 20+, two Hedera **testnet** accounts (one pays, one receives), an Anthropic API key.
+Requirements: Node 20+, one funded Hedera **testnet** account (the setup script creates the receiving account), an Anthropic API key.
 
 ```bash
 git clone https://github.com/felix859/EthGlobalMumbai.git && cd EthGlobalMumbai
@@ -120,13 +127,20 @@ npm install
 cp .env.example .env          # fill in account ids and keys; testnet keys only, never commit .env
 npm run setup:hedera          # creates the merchant account and the HCS audit topic
 npm run setup:receipt         # creates the receipt NFT collection
-npm test                      # unit tests
-npm run dev                   # server, agent and web together 🚧 (web is still being built)
+npm run setup:identity        # optional: publishes the agent's identity profile
+npm test                      # all tests
+npm run dev                   # data server, agent and dashboard together
 ```
+
+Then open http://localhost:5173. To see the dashboard **without any backend**, open http://localhost:5173/?mock=1 (replays a recorded run).
+
+Optional: `npm run setup:analyst` and `npm run dev:analyst` start the Analyst agent (agent-to-agent payments); [docs/mcp.md](docs/mcp.md) shows how to add the MCP server to Claude.
 
 ## Limitations (honest list)
 
 - Testnet only; no mainnet funds were used.
+- Spending ceilings live in memory: restarting a process resets its totals. Keep the agent's wallet itself low-balance.
+- Agent identity follows the HCS-14 **draft**; the profile is HCS-11-shaped, not a compliant HCS-1 inscription.
 - The agent trusts the configured facilitator to settle; it can only settle the exact transfer the agent signed.
 - A model can waste budget on allowed-but-useless purchases. The caps bound the damage; they do not judge value.
 - Data endpoints wrap free public APIs (Open-Meteo, CoinGecko, Hacker News) and are cached for 60 seconds. If an upstream fails, the last good value is served (marked `stale`) for up to 10 minutes; after that the server answers 502 *before* asking for payment, so a buyer is never charged for data it cannot get.
