@@ -1,0 +1,1 @@
+{"name":"spike","private":true,"type":"module","dependencies":{"@hiero-ledger/sdk":"^2.90.1","@x402/core":"^2.30.0","@x402/express":"^2.30.0","@x402/fetch":"^2.30.0","@x402/hedera":"^2.30.0","express":"^5.3.0","tsx":"^4.23.15"}}
