@@ -242,4 +242,42 @@ describe("runAgent", () => {
       expect((third.at(-1) as any).type).toMatch(/answer|error/);
     });
   });
+
+  describe("multiple trusted sellers", () => {
+    const seller = { id: "weather" as const, path: "/api/briefing", description: "b", priceTinybars: "2000000", asset: "0.0.0", payTo: "0.0.222", baseUrl: "http://localhost:3100" };
+    const mk2 = async (entry: any, trustedPayTo: any, trustedOrigins?: string[]) => {
+      const events: RunEvent[] = [];
+      const urls: string[] = [];
+      const makePay: RunDeps["makePay"] = (guard) => async (url) => {
+        urls.push(url);
+        const v = guard.check({ amount: seller.priceTinybars, payTo: entry.payTo ?? cat.payTo, asset: "0.0.0" });
+        if (!v.ok) return { ok: false, reason: v.reason };
+        guard.record(2_000_000n);
+        return { ok: true, data: { ok: 1 }, txId: "0.0.1@2", amount: 2_000_000n, asset: "0.0.0" };
+      };
+      await runAgent({
+        question: "q", budgetTinybars: "10000000", trustedPayTo, trustedOrigins, emit: (e) => events.push(e),
+        deps: { fetchCatalogue: async () => ({ ...cat, endpoints: [entry] }), makePay, llm: scripted([buy("weather"), text("ok")]) },
+      });
+      return { events, urls };
+    };
+    it("pays a second trusted seller on its own origin", async () => {
+      const { events, urls } = await mk2(seller, ["0.0.111", "0.0.222"], ["http://localhost:3100"]);
+      expect(events.some((e) => e.type === "payment")).toBe(true);
+      expect(urls[0]).toBe("http://localhost:3100/api/briefing");
+    });
+    it("refuses to run if an entry names a payee that is not configured", async () => {
+      const { events } = await mk2(seller, ["0.0.111"], ["http://localhost:3100"]);
+      expect((events.at(-1) as any).message).toMatch(/not a configured merchant/);
+    });
+    it("refuses an entry whose origin is not trusted", async () => {
+      const { events } = await mk2({ ...seller, baseUrl: "http://evil.example" }, ["0.0.111", "0.0.222"], []);
+      expect(events.some((e) => e.type === "payment")).toBe(false);
+      expect(events.some((e) => e.type === "error")).toBe(true);
+    });
+    it("comma-separated env style list works", async () => {
+      const { events } = await mk2(seller, "0.0.111, 0.0.222", ["http://localhost:3100"]);
+      expect(events.some((e) => e.type === "payment")).toBe(true);
+    });
+  });
 });

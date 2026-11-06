@@ -20,7 +20,9 @@ export interface RunOptions {
    * The ONLY account the agent may pay. Defaults to env MERCHANT_ACCOUNT_ID. It is deliberately NOT taken from the
    * server's catalogue: a compromised or spoofed server could otherwise name its own account and pass the allowlist.
    */
-  trustedPayTo?: string;
+  trustedPayTo?: string | string[];
+  /** Origins the agent may pay besides SERVER_URL. Defaults to env TRUSTED_ORIGINS (comma separated). */
+  trustedOrigins?: string[];
   /** Where human decisions arrive. Defaults to the process-wide gate the HTTP API resolves. */
   gate?: ApprovalGate;
   /** Test seams; production uses the defaults. */
@@ -101,9 +103,15 @@ export async function runAgent(opts: RunOptions): Promise<void> {
     emit({ type: "started", runId, budgetTinybars: budget.toString() });
 
     const cat = await deps.fetchCatalogue();
-    const trusted = opts.trustedPayTo ?? process.env.MERCHANT_ACCOUNT_ID;
-    if (!trusted) throw new Error("MERCHANT_ACCOUNT_ID must be configured: the agent will not trust the server to name its own payee");
-    if (cat.payTo !== trusted) throw new Error(`Catalogue payee ${cat.payTo} does not match the configured merchant ${trusted}; refusing to run`);
+    const list = (v: string | string[] | undefined) =>
+      (Array.isArray(v) ? v : (v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
+    const trusted = list(opts.trustedPayTo ?? process.env.MERCHANT_ACCOUNT_ID);
+    if (trusted.length === 0) throw new Error("MERCHANT_ACCOUNT_ID must be configured: the agent will not trust the server to name its own payee");
+    if (!trusted.includes(cat.payTo)) throw new Error(`Catalogue payee ${cat.payTo} does not match the configured merchant ${trusted.join(",")}; refusing to run`);
+    for (const e of cat.endpoints) {
+      if (e.payTo !== undefined && !trusted.includes(e.payTo)) throw new Error(`Endpoint ${e.id} names payee ${e.payTo}, which is not a configured merchant; refusing to run`);
+    }
+    const trustedOrigins = [serverUrl(), ...list(opts.trustedOrigins ?? process.env.TRUSTED_ORIGINS)];
     const policy = resolvePolicy(opts.policy);
     const gate = opts.gate ?? approvals;
     const guard = new BudgetGuard({
@@ -174,7 +182,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
             continue;
           }
         }
-        const r = await payFor(safeEndpointUrl(server, entry.path));
+        const r = await payFor(safeEndpointUrl(entry.baseUrl ?? server, entry.path, trustedOrigins));
         if (!r.ok) {
           emit({ type: "denied", endpointId: id, reason: r.reason });
           results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Purchase failed: ${r.reason}. Do not retry.` });

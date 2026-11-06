@@ -44,3 +44,17 @@ describe("truncateForModel", () => {
     expect(out).toContain("truncated 50 characters");
   });
 });
+
+describe("safeEndpointUrl with trusted sellers", () => {
+  const trusted = ["http://localhost:3000", "http://localhost:3100"];
+  it("allows a listed seller origin", () => {
+    expect(safeEndpointUrl("http://localhost:3100", "/api/briefing", trusted)).toBe("http://localhost:3100/api/briefing");
+  });
+  it("refuses an origin that is not listed", () => {
+    expect(() => safeEndpointUrl("http://evil.example", "/api/x", trusted)).toThrow(/not a trusted seller/);
+    expect(() => safeEndpointUrl("http://localhost:3999", "/api/x", trusted)).toThrow();
+  });
+  it("still refuses path tricks on a trusted origin", () => {
+    expect(() => safeEndpointUrl("http://localhost:3100", "//evil.com/x", trusted)).toThrow();
+  });
+});

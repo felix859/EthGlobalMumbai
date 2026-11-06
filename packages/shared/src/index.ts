@@ -10,6 +10,10 @@ export interface CatalogueEntry {
   description: string; // shown to the model
   priceTinybars: string; // string to avoid bigint JSON issues
   asset: string; // "0.0.0" for HBAR, else HTS token id
+  /** Seller account for THIS entry when it differs from `Catalogue.payTo` (e.g. another agent). Must be trusted by the buyer. */
+  payTo?: string;
+  /** Origin that serves this entry when it is not the main server. Must be trusted by the buyer. */
+  baseUrl?: string;
 }
 
 export interface Catalogue {
