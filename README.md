@@ -58,7 +58,7 @@ A security review and an independent code review, with findings and fixes: [docs
 | Service | What for |
 |---|---|
 | **x402 `exact` scheme on `hedera:testnet`** | Every data purchase, settled in HBAR via the Blocky402 facilitator |
-| **Hedera Consensus Service (HCS)** | Public audit log (one message per payment) and the agent's identity profile |
+| **Hedera Consensus Service (HCS)** | Public audit log, one message per payment ([topic 0.0.11341094](https://hashscan.io/testnet/topic/0.0.11341094)), and the agent's identity profile |
 | **Mirror Node REST API** | The dashboard reads the audit log and the agent's balance straight from the public mirror node |
 | **Hedera Token Service (HTS)** | One receipt NFT per run, recording what was bought and what it cost (payments themselves settle in HBAR) |
 
@@ -130,6 +130,7 @@ npm run setup:receipt         # creates the receipt NFT collection
 npm run setup:identity        # optional: publishes the agent's identity profile
 npm test                      # all tests
 npm run dev                   # data server, agent and dashboard together
+npm run e2e                   # optional: one real paid run from the CLI (needs the server running), prints HashScan links
 ```
 
 Then open http://localhost:5173. To see the dashboard **without any backend**, open http://localhost:5173/?mock=1 (replays a recorded run).

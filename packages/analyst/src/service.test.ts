@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { PayResult } from "@pennyagent/agent/pay";
-import { createBriefingService, validateAnalystConfig, type AnalystConfig } from "./service.js";
+import { createBriefingService, upstreamCost, validateAnalystConfig, type AnalystConfig } from "./service.js";
 
 const cfg: AnalystConfig = {
   priceTinybars: 3_000_000n, costCapTinybars: 2_000_000n, maxTotalSpendTinybars: 50_000_000n, maxPerCallTinybars: 10_000_000n,
@@ -59,5 +59,31 @@ describe("Analyst briefing service", () => {
   it("refuses an absolute upstream path", async () => {
     const s = createBriefingService({ ...cfg, paths: ["//evil.com/x"] }, paying());
     expect((await s.handle()).status).toBe(502);
+  });
+});
+
+describe("Analyst affordability", () => {
+  const cat = { endpoints: [{ path: "/api/weather", priceTinybars: "1000000" }, { path: "/api/hbar-price", priceTinybars: "3000000" }] };
+  it("sums upstream prices and rejects unknown paths", () => {
+    expect(upstreamCost(cat, ["/api/weather", "/api/hbar-price"])).toBe(4_000_000n);
+    expect(() => upstreamCost(cat, ["/api/nope"])).toThrow(/does not sell/);
+  });
+  it("refuses a config whose upstream cost exceeds the cost cap (the old defaults)", () => {
+    expect(() => validateAnalystConfig({ ...cfg, upstreamCostTinybars: 4_000_000n })).toThrow(/more than BRIEFING_COST_CAP/);
+    expect(() => validateAnalystConfig({ ...cfg, upstreamCostTinybars: 1_000_000n })).not.toThrow();
+  });
+  it("refuses a list of payees as the data merchant", () => {
+    expect(() => validateAnalystConfig({ ...cfg, dataMerchant: "0.0.111,0.0.222" })).toThrow(/ONE account id/);
+  });
+  it("does not start a briefing it cannot finish within the wallet limit", async () => {
+    let bought = 0;
+    const s = createBriefingService({ ...cfg, upstreamCostTinybars: 1_500_000n, maxTotalSpendTinybars: 2_000_000n, maxPerMinute: 100 }, (guard: any) => async () => {
+      bought++;
+      guard.spend({ amount: "1000000", payTo: "0.0.111", asset: "0.0.0" });
+      return { ok: true, data: {}, txId: "t", amount: 1_000_000n, asset: "0.0.0" };
+    });
+    expect((await s.handle()).status).toBe(200); // 1,000,000 spent, 1,000,000 left < 1,500,000 needed
+    expect((await s.handle()).status).toBe(503);
+    expect(bought).toBe(1);
   });
 });

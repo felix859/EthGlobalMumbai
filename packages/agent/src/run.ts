@@ -1,14 +1,15 @@
 // runAgent: the Claude tool-use loop. This is the seam used by the HTTP API (workstream #4).
 import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
-import { hashscanTokenUrl, hashscanTxUrl, type AuditMessage, type Catalogue, type RunEvent } from "@pennyagent/shared";
+import { formatHbar, hashscanTokenUrl, hashscanTxUrl, type AuditMessage, type Catalogue, type RunEvent } from "@pennyagent/shared";
 import { BudgetGuard, SpendLimit } from "./budget.js";
 import { fetchCatalogues } from "./catalogue.js";
 import { createPayingFetch, type PayOptions, type PayResult } from "./pay.js";
 import { approvals, needsApproval, resolvePolicy, type ApprovalGate, type PolicyOptions } from "./policy.js";
 import { mintReceipt, type Receipt, type ReceiptSummary } from "./receipt.js";
 import {
-  assertCatalogueTrusted,
+  buyerTrustedPayees,
+  trustedCatalogue,
   DEFAULT_MAX_RUN_BUDGET,
   DEFAULT_MAX_TOTAL_SPEND,
   parseList,
@@ -18,6 +19,8 @@ import {
 } from "./security.js";
 
 export interface RunOptions {
+  /** Lets the caller (the HTTP API) pick the id it already returned to the client. Defaults to a fresh UUID. */
+  runId?: string;
   question: string;
   budgetTinybars: string;
   emit: (e: RunEvent) => void;
@@ -26,7 +29,7 @@ export interface RunOptions {
   /** Per-run spending policy; unset fields fall back to env (MAX_PRICE_PER_CALL, APPROVAL_ABOVE_TINYBARS). */
   policy?: PolicyOptions;
   /**
-   * The ONLY accounts the agent may pay. Defaults to env MERCHANT_ACCOUNT_ID. It is deliberately NOT taken from the
+   * The ONLY accounts the agent may pay. Defaults to env TRUSTED_PAYEES, else MERCHANT_ACCOUNT_ID. It is deliberately NOT taken from the
    * server's catalogue: a compromised or spoofed server could otherwise name its own account and pass the allowlist.
    */
   trustedPayTo?: string | string[];
@@ -84,12 +87,8 @@ const defaultMakePay: RunDeps["makePay"] = (guard, allowedOrigins) =>
 // Only build the Anthropic client when it is actually used (tests inject a fake).
 const defaultLlm = (): RunDeps["llm"] => new Anthropic({ apiKey: env("ANTHROPIC_API_KEY") }).messages;
 
-export const hbar = (t: bigint | string) => {
-  const v = BigInt(t);
-  const whole = v / 100_000_000n;
-  const frac = (v % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : `${whole}`;
-};
+/** Exact HBAR formatting; one implementation for the whole repo (packages/shared). */
+export const hbar = formatHbar;
 
 // Fixed text only: nothing seller-provided goes into the system prompt.
 function systemPrompt(budget: bigint) {
@@ -118,7 +117,7 @@ ${question}`;
 
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { question, emit } = opts;
-  const runId = randomUUID();
+  const runId = opts.runId ?? randomUUID();
   try {
     const d = opts.deps ?? {};
     const deps: RunDeps = {
@@ -134,9 +133,8 @@ export async function runAgent(opts: RunOptions): Promise<void> {
     if (limit.remaining <= 0n) throw new Error("The agent's total spending limit has been reached; restart the agent to reset it");
     emit({ type: "started", runId, budgetTinybars: budget.toString() });
 
-    const cat = await deps.fetchCatalogue();
-    const trusted = parseList(opts.trustedPayTo ?? process.env.MERCHANT_ACCOUNT_ID);
-    assertCatalogueTrusted(cat, trusted);
+    const trusted = opts.trustedPayTo !== undefined ? parseList(opts.trustedPayTo) : buyerTrustedPayees();
+    const cat = trustedCatalogue(await deps.fetchCatalogue(), trusted);
     const server = serverUrl();
     const trustedOrigins = [server, ...parseList(opts.trustedOrigins ?? process.env.TRUSTED_ORIGINS)];
     const policy = resolvePolicy(opts.policy);
@@ -213,8 +211,16 @@ export async function runAgent(opts: RunOptions): Promise<void> {
         }
         const price = BigInt(entry.priceTinybars);
         const payee = entry.payTo ?? cat.payTo;
-        // Human approval for big purchases. Only asked when the guard would allow the purchase anyway.
-        if (needsApproval(policy, price) && guard.check({ amount: entry.priceTinybars, payTo: payee, asset: entry.asset }).ok) {
+        // Check the ADVERTISED terms first and refuse outright if they break the policy. Otherwise a catalogue could
+        // advertise terms the guard rejects (price above the cap, wrong asset) to skip the approval question, then
+        // charge a "valid" amount in the 402. maxAmount below keeps the 402 at or under these checked terms.
+        const pre = guard.check({ amount: entry.priceTinybars, payTo: payee, asset: entry.asset });
+        if (!pre.ok) {
+          refuse(call.id, id, pre.reason);
+          continue;
+        }
+        // Human approval for big purchases.
+        if (needsApproval(policy, price)) {
           const approvalId = gate.newId();
           const decision = gate.request(approvalId, policy.approvalTimeoutMs, runId); // register before announcing
           emit({ type: "approval_required", approvalId, endpointId: id, amountTinybars: entry.priceTinybars, timeoutMs: policy.approvalTimeoutMs, expiresAt: Date.now() + policy.approvalTimeoutMs });

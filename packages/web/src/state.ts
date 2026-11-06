@@ -30,7 +30,29 @@ export const AGENT_SELLERS = new Set(["briefing"]);
 /** Only links we can vouch for are rendered as links (defence in depth: event data comes from the network). */
 export const safeHashscan = (url: string): string | undefined => (/^https:\/\/hashscan\.io\/(testnet|mainnet)\//.test(url) ? url : undefined);
 
-export function reduceRun(state: RunState, e: RunEvent): RunState {
+/** A local action: start showing a run as soon as the API returns its id, before any event arrives. */
+export type RunAction = RunEvent | { type: "_seed"; runId: string; budgetTinybars?: string };
+
+const AMOUNT = /^[0-9]{1,18}$/;
+/** Events carrying malformed amounts are dropped instead of crashing the page (they come from the network). */
+function hasValidAmounts(e: RunEvent): boolean {
+  switch (e.type) {
+    case "started":
+      return AMOUNT.test(e.budgetTinybars);
+    case "payment":
+      return AMOUNT.test(e.amountTinybars) && AMOUNT.test(e.spentTinybars);
+    case "approval_required":
+      return AMOUNT.test(e.amountTinybars) && Number.isFinite(e.expiresAt);
+    default:
+      return true;
+  }
+}
+
+export function reduceRun(state: RunState, e: RunAction): RunState {
+  if (e.type === "_seed") {
+    return { ...initialRunState, status: "running", runId: e.runId, ...(e.budgetTinybars && AMOUNT.test(e.budgetTinybars) ? { budgetTinybars: e.budgetTinybars } : {}) };
+  }
+  if (!hasValidAmounts(e)) return state;
   const nextId = state.items.length ? state.items[state.items.length - 1].id + 1 : 1;
   const add = (item: TimelineItem): RunState => ({ ...state, items: [...state.items, item] });
 

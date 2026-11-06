@@ -25,7 +25,9 @@ if (!hasKey("MERCHANT_PRIVATE_KEY")) {
   console.log("merchant account:", id, `https://hashscan.io/testnet/account/${id}`);
 }
 if (!hasKey("HCS_TOPIC_ID") || /^HCS_TOPIC_ID=0\.0\.x+/m.test(readFileSync(".env", "utf8"))) {
-  const r = await new TopicCreateTransaction().setTopicMemo("PennyAgent audit log").execute(client);
+  // Submit key = the agent's key, so only the agent can append audit entries (the original demo topic predates this;
+  // the dashboard also filters by submitting account).
+  const r = await new TopicCreateTransaction().setTopicMemo("PennyAgent audit log").setSubmitKey(agentKey.publicKey).execute(client);
   const id = (await r.getReceipt(client)).topicId!.toString();
   appendFileSync(".env", `HCS_TOPIC_ID=${id}\n`);
   console.log("HCS topic:", id, `https://hashscan.io/testnet/topic/${id}`);

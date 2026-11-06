@@ -4,7 +4,7 @@ import { fetchAuditRows, type AuditRow } from "../mirror.js";
 import { topicUrl, txUrl } from "../links.js";
 import { ExternalLink } from "./ExternalLink.js";
 
-export function AuditPanel({ topicId, refreshKey }: { topicId?: string; refreshKey: number }) {
+export function AuditPanel({ topicId, agentAccount, refreshKey }: { topicId?: string; agentAccount?: string; refreshKey: number }) {
   const [rows, setRows] = useState<AuditRow[]>();
   const [error, setError] = useState<string>();
 
@@ -12,7 +12,7 @@ export function AuditPanel({ topicId, refreshKey }: { topicId?: string; refreshK
     if (!topicId) return;
     let alive = true;
     const load = () =>
-      fetchAuditRows(topicId)
+      fetchAuditRows(topicId, agentAccount)
         .then((r) => alive && (setRows(r), setError(undefined)))
         .catch((e: Error) => alive && setError(e.message));
     void load();
@@ -21,14 +21,14 @@ export function AuditPanel({ topicId, refreshKey }: { topicId?: string; refreshK
       alive = false;
       clearInterval(t);
     };
-  }, [topicId, refreshKey]);
+  }, [topicId, agentAccount, refreshKey]);
 
   return (
     <section className="panel" aria-labelledby="audit-title">
       <h2 id="audit-title">Audit log</h2>
       <p className="muted small">
         Read straight from the public Hedera mirror node{topicId ? ", topic " : ""}
-        {topicId && <ExternalLink href={topicUrl(topicId)}>{topicId}</ExternalLink>}. It does not depend on our agent.
+        {topicId && <ExternalLink href={topicUrl(topicId)}>{topicId}</ExternalLink>}. It does not depend on our agent. Only messages submitted by the agent's own account count.
       </p>
       {error && <p className="bad-text small">{error}</p>}
       {!topicId && <p className="muted">Waiting for the agent's configuration…</p>}
@@ -47,7 +47,7 @@ export function AuditPanel({ topicId, refreshKey }: { topicId?: string; refreshK
                 </ExternalLink>
               </>
             ) : (
-              <span className="muted small">other message</span>
+              <span className="muted small">not from the agent{r.payer ? ` (${r.payer})` : ""}: ignored</span>
             )}
           </li>
         ))}

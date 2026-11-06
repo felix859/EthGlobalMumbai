@@ -45,6 +45,11 @@ afterAll(() => new Promise((r) => server.close(r)));
 const decode = (h: string | null) => JSON.parse(Buffer.from(h!, "base64").toString("utf8"));
 
 describe("data server", () => {
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])("GET /api/%s is a 404, not an inherited object key", async (id) => {
+    const r = await fetch(`${base}/api/${id}`);
+    expect(r.status).toBe(404);
+  });
+
   it("GET /catalogue is free and lists the four endpoints with prices, payee and asset", async () => {
     const r = await fetch(`${base}/catalogue`);
     expect(r.status).toBe(200);

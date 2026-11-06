@@ -7,7 +7,7 @@ import { z } from "zod";
 import { BudgetGuard } from "@pennyagent/agent/budget";
 import { createPayingFetch } from "@pennyagent/agent/pay";
 import { fetchCatalogues } from "@pennyagent/agent/catalogue";
-import { DEFAULT_MAX_RUN_BUDGET, parseList, parseTinybars } from "@pennyagent/agent/security";
+import { buyerTrustedPayees, DEFAULT_MAX_RUN_BUDGET, parseList, parseTinybars } from "@pennyagent/agent/security";
 import { Toolset } from "./toolset.js";
 
 const need = (k: string) => {
@@ -25,7 +25,7 @@ if (requested > ceiling) throw new Error(`MCP_SESSION_BUDGET_TINYBARS (${request
 
 const toolset = new Toolset({
   serverUrl,
-  trustedPayees: parseList(need("MERCHANT_ACCOUNT_ID")),
+  trustedPayees: buyerTrustedPayees(),
   trustedOrigins: parseList(process.env.TRUSTED_ORIGINS),
   sessionBudget: requested,
   maxPerCall: parseTinybars(process.env.MAX_PRICE_PER_CALL, "MAX_PRICE_PER_CALL", 10_000_000n),

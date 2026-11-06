@@ -62,3 +62,24 @@ Minor items also fixed: duplicate purchases blocked in code, per-tool denial ins
 **Statements above that this corrects:** "Human approval is requested before signing" was true only relative to the catalogue price (R2); "a 'buy everything' injection cannot exceed the budget" held only for sequential purchases (R1). Both now hold in general.
 
 **Still accepted:** ceilings are in memory and reset on restart; the facilitator is trusted to settle only what was signed; the transitive `ws` advisory.
+
+---
+
+# Third review: independent code review (2026-11-06)
+
+A second independent review covered the review fixes, the data server and the web dashboard (`main` 1143936..d9252c6). It confirmed that the spending cap, payee allowlist and price bound now hold under concurrency and server errors, by tracing the x402 library source, and found no critical issues. It also found that **two statements in the "Second review" above were too strong**:
+
+- *"Human approval is requested before signing ... now holds in general"*: **false against a hostile catalogue.** Approval was only asked when the advertised terms passed the guard, so a catalogue could advertise a price above the cap (or a wrong asset) to skip the question, then charge up to the cap in the 402. The budget and caps still held. **Fixed:** advertised terms that break the policy are now refused outright; approval is asked whenever the advertised price is above the threshold; the 402 is bounded by that price.
+- *R5 "no selling at a loss"*: **overstated.** With the defaults (weather + hbar-price upstream, 0.04 HBAR, against a 0.02 cost cap) every sale paid for weather and then failed. **Fixed:** default upstream is weather only; the Analyst refuses to start if its upstream paths cost more than its cost cap, and refuses a sale it cannot afford before buying anything. Remaining, documented: the Analyst works after the buyer's payment is verified but before it settles, so a buyer whose payment later fails to settle can still cost it up to one cost cap (bounded by the rate and wallet limits).
+
+| # | Finding | Fix |
+|---|---|---|
+| T1 | Approval bypass via a hostile catalogue (above) | Pre-check of advertised terms; refuse instead of falling through |
+| T2 | Dashboard closed the stream on `answer`, losing receipts and late audit events | Closes on the API's `end` event (sent after receipt and audit writes) |
+| T3 | Dashboard depended on receiving `started` | Seeds the run from the `/api/ask` response; the API also replays a run's events to late subscribers |
+| T4 | `.env.example` put several payees in `MERCHANT_ACCOUNT_ID`, breaking the data server and the Analyst | `MERCHANT_ACCOUNT_ID` is one id (the server's payee); buyers use `TRUSTED_PAYEES` |
+| T5 | Analyst defaults lost money on every sale | See above |
+| T6 | An API caller could raise the per-call cap (and switch off an operator approval threshold) | Callers can only tighten: cap and threshold are the stricter of operator and request |
+| T7 | Anyone could post fake entries to the audit topic, shown as genuine | Dashboard only counts messages submitted by the agent's own account; new topics get a submit key |
+
+Also fixed: guard checks the payment network; a signed payment is never released by a failing later hook; an untrusted extra seller is skipped instead of blocking every run; server `/api/constructor` is a 404; one failing headline no longer fails the endpoint; malformed amounts from the network are dropped instead of crashing the dashboard; double submit and zero caps blocked in the form; accessibility labels; one HBAR formatter. **Still accepted:** ceilings and MCP session budgets are in memory and per process; a failed payment that may have settled is reported as `denied` with `chargedTinybars` but not written to the HCS log (there is no transaction id to log); the existing demo audit topic has no submit key (the dashboard filter covers it).

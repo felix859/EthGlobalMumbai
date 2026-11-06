@@ -67,10 +67,10 @@ function Item({ item, pending, onDecide }: { item: TimelineItem; pending: boolea
             </p>
             {pending && !item.outcome ? (
               <div className="approval-actions">
-                <button type="button" className="primary" onClick={() => onDecide(item.approvalId, true)}>
+                <button type="button" className="primary" onClick={() => onDecide(item.approvalId, true)} aria-label={`Approve buying ${item.endpointId} for ${formatHbar(item.amountTinybars)} HBAR`}>
                   Approve
                 </button>
-                <button type="button" className="ghost" onClick={() => onDecide(item.approvalId, false)}>
+                <button type="button" className="ghost" onClick={() => onDecide(item.approvalId, false)} aria-label={`Reject buying ${item.endpointId}`}>
                   Reject
                 </button>
                 <Countdown until={item.expiresAt} />
@@ -115,9 +115,17 @@ export function RunPanel({ run, onDecide }: { run: RunState; onDecide: (approval
   }
   const frac = spentFraction(run);
   return (
-    <section className="panel run" aria-labelledby="run-title" aria-live="polite">
+    <section className="panel run" aria-labelledby="run-title">
       <h2 id="run-title">Live run</h2>
-      <div className="meter" role="meter" aria-valuemin={0} aria-valuemax={1} aria-valuenow={frac} aria-label="Budget spent">
+      <div
+        className="meter"
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(frac * 100)}
+        aria-valuetext={`${formatHbar(run.spentTinybars)} of ${run.budgetTinybars ? formatHbar(run.budgetTinybars) : "unknown"} HBAR spent`}
+        aria-label="Budget spent"
+      >
         <div className="meter-head">
           <span>
             Spent <strong>{formatHbar(run.spentTinybars)}</strong> of {run.budgetTinybars ? formatHbar(run.budgetTinybars) : "?"} HBAR
@@ -128,7 +136,7 @@ export function RunPanel({ run, onDecide }: { run: RunState; onDecide: (approval
           <div className="meter-fill" style={{ width: `${(frac * 100).toFixed(1)}%` }} />
         </div>
       </div>
-      <ol className="timeline">
+      <ol className="timeline" aria-live="polite" aria-relevant="additions">
         {run.items.map((i) => (
           <Item key={i.id} item={i} pending={i.kind === "approval" && run.pendingApprovalId === i.approvalId} onDecide={onDecide} />
         ))}

@@ -14,13 +14,17 @@ import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { BudgetGuard, type Reservation } from "./budget.js";
 import { assertAllowedUrl, DEFAULT_TIMEOUT_MS, MAX_BODY_BYTES, MAX_DATA_CHARS, readCapped, truncateForModel } from "./security.js";
 
-type Requirement = { amount: string; payTo: string; asset: string };
+type Requirement = { amount: string; payTo: string; asset: string; network?: string };
 
 /** A client policy: keep only requirements the guard would allow; remember why others were dropped. Holds nothing. */
-export function makeGuardPolicy(guard: BudgetGuard, state: { denial?: string }, maxAmount?: bigint) {
+export function makeGuardPolicy(guard: BudgetGuard, state: { denial?: string }, maxAmount?: bigint, network?: string) {
   return <T extends Requirement>(_version: number, reqs: T[]): T[] => {
     const allowed: T[] = [];
     for (const r of reqs) {
+      if (network !== undefined && r.network !== network) {
+        state.denial ??= `Network ${r.network} is not ${network}`;
+        continue;
+      }
       const v = guard.check({ amount: r.amount, payTo: r.payTo, asset: r.asset }, maxAmount);
       if (v.ok) allowed.push(r);
       else state.denial ??= v.reason;
@@ -92,9 +96,13 @@ export function createPayingFetch(opts: PayingFetchOptions) {
         schemes: [{ network: "hedera:*", client: new ExactHederaScheme(signer) }],
         // Library-level cap as a second line of defence; the real rules are in BudgetGuard.
         spendControls: { allowedAssets: [{ network, asset, maxAmountPerPayment: "100000000" }] },
-        policies: [makeGuardPolicy(opts.guard, state, payOpts.maxAmount) as never],
+        policies: [makeGuardPolicy(opts.guard, state, payOpts.maxAmount, network) as never],
       })
       .onBeforePaymentCreation(async ({ selectedRequirements: r }) => {
+        if (r.network !== network) {
+          state.denial = `Network ${r.network} is not ${network}`;
+          return { abort: true, reason: state.denial };
+        }
         // Atomic reservation of the amount that is about to be signed.
         const res = opts.guard.reserve({ amount: r.amount, payTo: r.payTo, asset: r.asset }, payOpts.maxAmount);
         if (!res.ok) {
@@ -108,7 +116,7 @@ export function createPayingFetch(opts: PayingFetchOptions) {
         state.signed = true;
       })
       .onPaymentCreationFailure(async () => {
-        state.reservation?.release();
+        if (!state.signed) state.reservation?.release(); // once signed it counts as spent, never released
       });
 
     const pay = wrapFetchWithPayment(guardedFetch, client);

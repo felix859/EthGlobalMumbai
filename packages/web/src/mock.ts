@@ -1,6 +1,7 @@
 // Mock mode (?mock=1): the dashboard without any backend. It replays the committed sample run (runs/sample.json),
 // adds an approval step when the policy asks for one, and ends with a receipt, so every UI state can be shown.
-// The ids below are our real public testnet accounts; the tx ids in the sample are real testnet payments.
+// The account, topic and token ids below are our real public testnet ids. runs/sample.json reuses two real testnet
+// payment ids as stand-ins for its purchases; its answer text is hand-written (see the fixture's _note).
 import type { AgentConfig, AskRequest, HealthReport, RunEvent } from "@pennyagent/shared";
 import sample from "../../../runs/sample.json";
 import type { AgentApi } from "./api.js";
@@ -49,7 +50,7 @@ export function mockApi(speed = 1): AgentApi {
       d(approve);
       return true;
     },
-    subscribe(runId, onEvent) {
+    subscribe(runId, onEvent, _onError, onEnd) {
       let stopped = false;
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 1500) / speed));
       const req = runs.get(runId);
@@ -85,6 +86,7 @@ export function mockApi(speed = 1): AgentApi {
             onEvent(event);
             await sleep(800);
             if (!stopped) onEvent({ type: "receipt", tokenId: "0.0.11341392", serial: "1", txId: "mock", hashscanUrl: "https://hashscan.io/testnet/token/0.0.11341392/1" });
+            if (!stopped) onEnd?.();
             return;
           }
           onEvent(event);
