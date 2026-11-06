@@ -3,5 +3,6 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173, strictPort: true },
+  // Mock mode imports the committed sample run from ../../runs/sample.json
+  server: { port: 5173, strictPort: true, fs: { allow: ["../.."] } },
 });

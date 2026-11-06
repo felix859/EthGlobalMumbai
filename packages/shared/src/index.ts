@@ -100,6 +100,24 @@ export interface AuditMessage {
 export const PORTS = { server: 3000, agent: 4000, web: 5173 } as const;
 export const MUMBAI = { lat: 19.076, lon: 72.8777 } as const;
 
+/** Exact HBAR formatting from tinybars (bigint math, no floating point). "100000000" → "1", "3000000" → "0.03". */
+export function formatHbar(tinybars: string | bigint): string {
+  const v = BigInt(tinybars);
+  const neg = v < 0n;
+  const a = neg ? -v : v;
+  const frac = (a % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
+  return `${neg ? "-" : ""}${a / 100_000_000n}${frac ? `.${frac}` : ""}`;
+}
+
+/** HBAR (decimal string typed by a person) → tinybars string. Throws on bad input; max 8 decimals. */
+export function parseHbar(input: string): string {
+  const s = input.trim();
+  const m = /^(\d{1,10})(?:\.(\d{1,8}))?$/.exec(s);
+  if (!m) throw new Error("Enter an amount like 0.5 (up to 8 decimals)");
+  const t = BigInt(m[1]) * 100_000_000n + BigInt((m[2] ?? "").padEnd(8, "0") || "0");
+  return t.toString();
+}
+
 export const hashscanTokenUrl = (tokenId: string, serial: string, network: "testnet" | "mainnet" = "testnet") =>
   `https://hashscan.io/${network}/token/${tokenId}/${serial}`;
 
