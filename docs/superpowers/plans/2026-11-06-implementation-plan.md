@@ -13,11 +13,14 @@
 
 | Workstream | Owner | Scope |
 |---|---|---|
-| **Phase 0** | everyone | Scaffold, accounts, **x402 spike** |
-| **A: Server** | _unclaimed_ | x402-gated data API |
-| **B: Agent** | _unclaimed_ | Claude loop, x402 client, budget guard, HCS logger |
-| **C: Web** | _unclaimed_ | Dashboard UI |
-| **D: Ship** | _unclaimed_ | README, demo video, submission (starts early, finishes last) |
+| **Phase 0** | Felix | Scaffold, accounts, x402 spike: **DONE** (see `docs/spike-notes.md`) |
+| **Agent core** ([#1](https://github.com/felix859/EthGlobalMumbai/issues/1), branch `ws-agent-core`) | @felix859 | B1, B2, B3, B6 |
+| **Server** ([#2](https://github.com/felix859/EthGlobalMumbai/issues/2), branch `ws-server`) | @gopimehta | A1-A6 |
+| **Web** ([#3](https://github.com/felix859/EthGlobalMumbai/issues/3), branch `ws-web`) | @5bgjfbyqcr-cmd | C1-C5 |
+| **API + Audit + Ship** ([#4](https://github.com/felix859/EthGlobalMumbai/issues/4), branch `ws-api-ship`) | @Efia01 | B4, B5, B7, D1-D6 |
+| **Integration** ([#5](https://github.com/felix859/EthGlobalMumbai/issues/5)) | everyone | Phase 2 |
+
+Seam between #1 and #4: `runAgent({ question, budgetTinybars, emit, onPayment }): Promise<void>` exported from `packages/agent/src/run.ts`. `emit(e: RunEvent)` streams events; `onPayment(p: AuditMessage)` fires after each settled payment (the audit logger plugs in there).
 
 With 3 people: one person takes A, one B, one C, and D is split: whoever finishes first takes it. With 4: one each.
 
