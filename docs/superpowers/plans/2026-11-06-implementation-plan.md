@@ -14,10 +14,12 @@
 | Workstream | Owner | Scope |
 |---|---|---|
 | **Phase 0** | Felix | Scaffold, accounts, x402 spike: **DONE** (see `docs/spike-notes.md`) |
-| **Agent core** ([#1](https://github.com/felix859/EthGlobalMumbai/issues/1), branch `ws-agent-core`) | @felix859 | B1, B2, B3, B6 |
+| **Agent core** ([#1](https://github.com/felix859/EthGlobalMumbai/issues/1)) | @felix859 | B1, B2, B3, B6: **DONE, merged** |
 | **Server** ([#2](https://github.com/felix859/EthGlobalMumbai/issues/2), branch `ws-server`) | @gopimehta | A1-A6 |
 | **Web** ([#3](https://github.com/felix859/EthGlobalMumbai/issues/3), branch `ws-web`) | @5bgjfbyqcr-cmd | C1-C5 |
-| **API + Audit + Ship** ([#4](https://github.com/felix859/EthGlobalMumbai/issues/4), branch `ws-api-ship`) | @Efia01 | B4, B5, B7, D1-D6 |
+| **API + Audit** ([#4](https://github.com/felix859/EthGlobalMumbai/issues/4), branch `ws-api-ship`) | @Efia01 | B4, B5, B7 + approve/health/replay routes |
+| **Ship** ([#13](https://github.com/felix859/EthGlobalMumbai/issues/13), branch `ws-ship`) | @felix859 | D1-D6: README, video, submission |
+| **Extras** (#7 receipt NFT, #8 demo safety net, #9 policy + approval) | @felix859 | **DONE, merged** |
 | **Integration** ([#5](https://github.com/felix859/EthGlobalMumbai/issues/5)) | everyone | Phase 2 |
 
 Seam between #1 and #4: `runAgent({ question, budgetTinybars, emit, onPayment }): Promise<void>` exported from `packages/agent/src/run.ts`. `emit(e: RunEvent)` streams events; `onPayment(p: AuditMessage)` fires after each settled payment (the audit logger plugs in there).

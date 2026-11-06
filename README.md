@@ -12,7 +12,15 @@ Built at ETHGlobal Mumbai. Target: Hedera, "AI Agents That Pay: x402 on Hedera".
 
 ## Status
 
-Planning done. Nothing is built yet; see the plan for tasks and owners.
+| Piece | State |
+|---|---|
+| x402 payment on Hedera testnet (spike) | **Works**, see [spike notes](docs/spike-notes.md) |
+| Agent core: spending guard, guarded paying fetch, Claude loop | **Done**, 65 tests |
+| Extras: HTS receipt NFT per run, demo replay + health checks, spending policy with human approval | **Done** |
+| Server (#2), Web (#3), API + audit log (#4) | In progress |
+| README, video, submission (#13) | Starts now, finishes last |
+
+Task board: [GitHub issues](https://github.com/felix859/EthGlobalMumbai/issues).
 
 ## Planned layout
 
