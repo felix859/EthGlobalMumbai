@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Catalogue, RunEvent } from "@pennyagent/shared";
 import { runAgent, type RunDeps } from "./run.js";
+import { ApprovalGate } from "./policy.js";
 import { BudgetGuard } from "./budget.js";
 import type { PayResult } from "./pay.js";
 
@@ -126,5 +127,63 @@ describe("runAgent", () => {
     });
     expect(events.some((e) => e.type === "answer")).toBe(true);
     expect(events.find((e) => e.type === "receipt_failed")).toMatchObject({ reason: "hts down" });
+  });
+
+  describe("human approval threshold", () => {
+    const runWith = async (policy: any, decide: "approve" | "reject" | "none", llm = scripted([buy("hbar-price"), text("ok")])) => {
+      const events: RunEvent[] = [];
+      const gate = new ApprovalGate();
+      await runAgent({
+        question: "q", budgetTinybars: "50000000", policy, gate,
+        emit: (e) => {
+          events.push(e);
+          if (e.type === "approval_required" && decide !== "none") queueMicrotask(() => gate.resolve(e.approvalId, decide === "approve"));
+        },
+        deps: { fetchCatalogue: async () => cat, makePay: guardedPay(), llm },
+      });
+      return events;
+    };
+    const types = (ev: RunEvent[]) => ev.map((e) => e.type);
+
+    it("asks above the threshold; approve then pays", async () => {
+      const ev = await runWith({ approvalAboveTinybars: "2000000" }, "approve");
+      expect(types(ev)).toEqual(["started", "approval_required", "approval_resolved", "payment", "answer"]);
+      expect((ev[2] as any).outcome).toBe("approved");
+    });
+    it("reject means no payment and a denied event", async () => {
+      const ev = await runWith({ approvalAboveTinybars: "2000000" }, "reject");
+      expect(types(ev)).toEqual(["started", "approval_required", "approval_resolved", "denied", "answer"]);
+      expect(ev.some((e) => e.type === "payment")).toBe(false);
+    });
+    it("no answer in time is a timeout, not a hang, and nothing is paid", async () => {
+      const ev = await runWith({ approvalAboveTinybars: "2000000", approvalTimeoutMs: 20 }, "none");
+      expect((ev.find((e) => e.type === "approval_resolved") as any).outcome).toBe("timeout");
+      expect(ev.some((e) => e.type === "payment")).toBe(false);
+      expect(ev.at(-1)?.type).toBe("answer");
+    });
+    it("at or below the threshold pays without asking", async () => {
+      const ev = await runWith({ approvalAboveTinybars: "3000000" }, "none"); // hbar-price costs exactly 3,000,000
+      expect(ev.some((e) => e.type === "approval_required")).toBe(false);
+      expect(ev.some((e) => e.type === "payment")).toBe(true);
+    });
+    it("default (no threshold) is fully autonomous", async () => {
+      const ev = await runWith({}, "none");
+      expect(ev.some((e) => e.type === "approval_required")).toBe(false);
+      expect(ev.some((e) => e.type === "payment")).toBe(true);
+    });
+    it("does not ask a human about a purchase the guard would refuse anyway", async () => {
+      const ev = await runWith({ approvalAboveTinybars: "1000000", maxPerCallTinybars: "2000000" }, "approve", scripted([buy("headlines"), text("ok")]));
+      expect(ev.some((e) => e.type === "approval_required")).toBe(false);
+      expect(ev.find((e) => e.type === "denied")).toBeTruthy();
+    });
+    it("a per-run per-call cap from the policy is enforced", async () => {
+      const ev = await runWith({ maxPerCallTinybars: "1500000" }, "none", scripted([buy("air-quality"), text("ok")]));
+      expect(ev.some((e) => e.type === "payment")).toBe(false);
+      expect((ev.find((e) => e.type === "denied") as any).reason).toMatch(/per-call cap/);
+    });
+    it("a malformed policy fails the run cleanly", async () => {
+      const ev = await runWith({ approvalAboveTinybars: "abc" }, "none");
+      expect(ev.at(-1)?.type).toBe("error");
+    });
   });
 });
