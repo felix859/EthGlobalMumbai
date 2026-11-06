@@ -41,29 +41,36 @@ export const needsApproval = (p: ResolvedPolicy, priceTinybars: bigint) =>
 
 /** Pending human decisions, keyed by approvalId. The HTTP API (#4) calls `resolve`. */
 export class ApprovalGate {
-  private pending = new Map<string, (o: ApprovalOutcome) => void>();
+  private pending = new Map<string, { runId: string; fn: (o: ApprovalOutcome) => void }>();
 
   newId = () => randomUUID();
 
   /** Waits for `resolve(id, …)`. Never hangs: resolves "timeout" after `timeoutMs`. */
-  request(id: string, timeoutMs: number): Promise<ApprovalOutcome> {
+  request(id: string, timeoutMs: number, runId: string): Promise<ApprovalOutcome> {
     return new Promise((done) => {
       const timer = setTimeout(() => {
         if (this.pending.delete(id)) done("timeout");
       }, timeoutMs);
-      this.pending.set(id, (o) => {
-        clearTimeout(timer);
-        done(o);
+      this.pending.set(id, {
+        runId,
+        fn: (o) => {
+          clearTimeout(timer);
+          done(o);
+        },
       });
     });
   }
 
-  /** Returns false when the id is unknown or was already decided or timed out. */
-  resolve(id: string, approve: boolean): boolean {
-    const fn = this.pending.get(id);
-    if (!fn) return false;
+  /**
+   * Returns false when the id is unknown, already decided, timed out, or belongs to a different run.
+   * `runId` must be the run named in the request URL: an approval id seen in one run's stream
+   * cannot approve a purchase in another.
+   */
+  resolve(id: string, approve: boolean, runId: string): boolean {
+    const p = this.pending.get(id);
+    if (!p || p.runId !== runId) return false;
     this.pending.delete(id);
-    fn(approve ? "approved" : "rejected");
+    p.fn(approve ? "approved" : "rejected");
     return true;
   }
 

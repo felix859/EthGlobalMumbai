@@ -38,9 +38,9 @@ describe("needsApproval", () => {
 describe("ApprovalGate", () => {
   it("approve and reject resolve the waiter", async () => {
     const g = new ApprovalGate();
-    const a = g.request("a", 1000), b = g.request("b", 1000);
-    expect(g.resolve("a", true)).toBe(true);
-    expect(g.resolve("b", false)).toBe(true);
+    const a = g.request("a", 1000, "r1"), b = g.request("b", 1000, "r1");
+    expect(g.resolve("a", true, "r1")).toBe(true);
+    expect(g.resolve("b", false, "r1")).toBe(true);
     expect(await a).toBe("approved");
     expect(await b).toBe("rejected");
     expect(g.size).toBe(0);
@@ -48,18 +48,26 @@ describe("ApprovalGate", () => {
   it("times out instead of hanging, and a late decision is refused", async () => {
     vi.useFakeTimers();
     const g = new ApprovalGate();
-    const p = g.request("x", 5000);
+    const p = g.request("x", 5000, "r1");
     await vi.advanceTimersByTimeAsync(5001);
     expect(await p).toBe("timeout");
-    expect(g.resolve("x", true)).toBe(false);
+    expect(g.resolve("x", true, "r1")).toBe(false);
     vi.useRealTimers();
   });
   it("unknown and double decisions return false", async () => {
     const g = new ApprovalGate();
-    expect(g.resolve("nope", true)).toBe(false);
-    const p = g.request("y", 1000);
-    expect(g.resolve("y", true)).toBe(true);
-    expect(g.resolve("y", false)).toBe(false);
+    expect(g.resolve("nope", true, "r1")).toBe(false);
+    const p = g.request("y", 1000, "r1");
+    expect(g.resolve("y", true, "r1")).toBe(true);
+    expect(g.resolve("y", false, "r1")).toBe(false);
+    expect(await p).toBe("approved");
+  });
+  it("an approval id cannot be used from a different run", async () => {
+    const g = new ApprovalGate();
+    const p = g.request("z", 1000, "run-A");
+    expect(g.resolve("z", true, "run-B")).toBe(false);
+    expect(g.size).toBe(1);
+    expect(g.resolve("z", true, "run-A")).toBe(true);
     expect(await p).toBe("approved");
   });
 });
