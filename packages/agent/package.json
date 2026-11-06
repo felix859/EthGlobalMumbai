@@ -12,13 +12,18 @@
     "@pennyagent/shared": "*",
     "@x402/core": "^2.30.0",
     "@x402/fetch": "^2.30.0",
-    "@x402/hedera": "^2.30.0"
+    "@x402/hedera": "^2.30.0",
+    "@hiero-ledger/sdk": "^2.90.1"
   },
   "exports": {
     "./pay": "./src/pay.ts",
     "./budget": "./src/budget.ts",
     "./security": "./src/security.ts",
     "./run": "./src/run.ts",
-    "./policy": "./src/policy.ts"
+    "./policy": "./src/policy.ts",
+    "./catalogue": "./src/catalogue.ts",
+    "./identity": "./src/identity.ts",
+    "./replay": "./src/replay.ts",
+    "./health": "./src/health.ts"
   }
 }

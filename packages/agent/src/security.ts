@@ -60,3 +60,78 @@ export function safeEndpointUrl(serverUrl: string, path: string, allowedOrigins?
 export function truncateForModel(text: string, max = MAX_DATA_CHARS): string {
   return text.length <= max ? text : `${text.slice(0, max)}\n…[truncated ${text.length - max} characters]`;
 }
+
+/** Network timeout for every outbound request the agent makes. */
+export const DEFAULT_TIMEOUT_MS = 15_000;
+/** Bytes read from a paid response before we stop (the text is then cut to MAX_DATA_CHARS for the model). */
+export const MAX_BODY_BYTES = MAX_DATA_CHARS * 4;
+/** Bytes read from a catalogue. */
+export const MAX_CATALOGUE_BYTES = 64 * 1024;
+
+/**
+ * Parses a tinybar amount from config with a clear error, instead of an opaque BigInt SyntaxError.
+ * Empty/undefined → the default. `allowZero` is for "0 = off" settings.
+ */
+export function parseTinybars(value: string | undefined, name: string, fallback: bigint, allowZero = false): bigint {
+  if (value === undefined || value.trim() === "") return fallback;
+  const v = value.trim();
+  if (!/^(0|[1-9][0-9]{0,17})$/.test(v)) throw new Error(`${name} must be a whole number of tinybars, got "${value}"`);
+  const n = BigInt(v);
+  if (n === 0n && !allowZero) throw new Error(`${name} must be greater than 0`);
+  return n;
+}
+
+/** Refuses any URL that is not http(s) on one of the allowed origins. Used inside the paying fetch itself. */
+export function assertAllowedUrl(url: string, allowedOrigins: string[]): URL {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error(`Refusing malformed URL "${url}"`);
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`Refusing non-HTTP URL "${url}"`);
+  const allowed = new Set(allowedOrigins.map((o) => new URL(o).origin));
+  if (!allowed.has(u.origin)) throw new Error(`Refusing to pay ${u.origin}: not a trusted seller`);
+  return u;
+}
+
+/** Reads at most `maxBytes` of a response body, then cancels the stream. Never buffers more than that. */
+export async function readCapped(res: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
+  if (!res.body) return { text: "", truncated: false };
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const take = Math.min(value.length, maxBytes - total);
+    chunks.push(value.subarray(0, take));
+    total += take;
+    if (total >= maxBytes) {
+      truncated = true;
+      await reader.cancel().catch(() => {});
+      break;
+    }
+  }
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    buf.set(c, off);
+    off += c.length;
+  }
+  return { text: new TextDecoder().decode(buf), truncated };
+}
+
+/** Endpoint ids become tool enum values; keep them boring. */
+export const ENDPOINT_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+// Control characters, C1 controls and the Unicode line/paragraph separators (U+2028, U+2029).
+const CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]", "g");
+
+/** Seller-provided text shown to the model: no control characters, single line, length-capped. */
+export function sanitizeSellerText(s: unknown, max = 200): string {
+  if (typeof s !== "string") return "";
+  const clean = s.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max)}…`;
+}

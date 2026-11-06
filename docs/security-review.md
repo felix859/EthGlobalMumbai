@@ -39,3 +39,26 @@ These cannot be fixed in the agent package and are added to issue #4:
 - Testnet only. Do not point this at mainnet funds without auth on the API and a dedicated low-balance wallet.
 - The agent trusts `FACILITATOR_URL` to settle honestly. A malicious facilitator could take a signed transfer and settle it, but it can only move the exact amount to the exact payee that was signed.
 - The model could waste the budget on useless but allowed purchases; the caps bound the damage, they do not judge usefulness.
+
+---
+
+# Second review: independent code review (2026-11-06)
+
+An independent reviewer read all code on `main` (commit 1143936) and found that the self-review above was accurate **for a single sequential run** but missed three ways to beat the spending cap. All were fixed in the `review-fixes` branch (issue #24), with tests that reproduce each case.
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| R1 | **Important** | The guard was check-then-record: concurrent purchases (MCP tool calls, Analyst under load) could all pass the check against the same remaining budget; shared per-fetch state could record the wrong amount. | `BudgetGuard.reserve()` holds the amount atomically before signing; commit/release afterwards. A fresh x402 client and state per call. Tested with 6 parallel purchases against a 2-purchase budget, live on testnet with 5 against 4. |
+| R2 | **Important** | The approval threshold (and the MCP refusal) used the catalogue price, but the amount signed came from the 402. A hostile server could advertise low and charge up to the per-call cap without a human being asked. | Every purchase passes `maxAmount` = advertised (and, if asked, approved) price into the pay path; a higher 402 is refused before signing. |
+| R3 | **Important** | Spend was not recorded when the server returned non-2xx (or no settlement header) after the payment was sent. | Reservation is committed as soon as a payment is signed (`onAfterPaymentCreation`), whatever the response. Failures report `chargedTinybars`. |
+| R4 | **Important** | The process-wide ceiling was read once per run and could be exceeded by concurrent runs. | It is a shared `SpendLimit` that every run's guard reserves against atomically. Still in memory (documented). |
+| R5 | **Important** | The Analyst could sell at a loss (cost cap 0.2 HBAR vs price 0.03) and had no rate, concurrency or wallet-wide limit; handler untested. | Cost cap must be below the price (startup check, default 2/3), wallet-wide limit, concurrency cap (503), per-minute rate limit (429). Logic moved to a tested service. |
+| R6 | **Important** | Origin checks, timeouts and body caps lived only in callers; bodies were read fully before truncation. | `createPayingFetch` requires `allowedOrigins`, refuses non-HTTP URLs, times out every request, and stream-reads with a byte cap. Catalogue fetches are time- and size-capped and validated. |
+| R7 | **Important** | Seller descriptions were interpolated into the system prompt. | System prompt is fixed text; the catalogue is sanitised (control characters, length) and passed in the user turn inside a marked `<catalogue>` block. |
+| R8 | **Important** | Tests mostly mocked the real wiring. | New integration tests run the **real x402 client with real (offline) Hedera signing** against a local mock x402 server: price bound, payee, origin, redirect, timeout, 500-after-payment, missing settlement, huge body, concurrency. |
+
+Minor items also fixed: duplicate purchases blocked in code, per-tool denial instead of aborting a run on a bad path, approval check uses the entry's own payee, config amounts validated with clear errors, MCP honours `PAYMENT_ASSET` and caps its session budget, exact HBAR formatting, `as any` casts around the Hedera SDK removed, `.env.example` completed.
+
+**Statements above that this corrects:** "Human approval is requested before signing" was true only relative to the catalogue price (R2); "a 'buy everything' injection cannot exceed the budget" held only for sequential purchases (R1). Both now hold in general.
+
+**Still accepted:** ceilings are in memory and reset on restart; the facilitator is trusted to settle only what was signed; the transitive `ws` advisory.

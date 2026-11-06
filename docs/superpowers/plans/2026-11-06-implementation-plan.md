@@ -22,7 +22,7 @@
 | **Extras** (#7 receipt NFT, #8 demo safety net, #9 policy + approval) | @felix859 | **DONE, merged** |
 | **Integration** ([#5](https://github.com/felix859/EthGlobalMumbai/issues/5)) | everyone | Phase 2 |
 
-Seam between #1 and #4: `runAgent({ question, budgetTinybars, emit, onPayment }): Promise<void>` exported from `packages/agent/src/run.ts`. `emit(e: RunEvent)` streams events; `onPayment(p: AuditMessage)` fires after each settled payment (the audit logger plugs in there).
+Seam between #1 and #4: `runAgent({ question, budgetTinybars, emit, onPayment, policy? }): Promise<void>` exported from `packages/agent/src/run.ts`. `emit(e: RunEvent)` streams events; `onPayment(p: AuditMessage)` fires after each settled payment (the audit logger plugs in there).
 
 With 3 people: one person takes A, one B, one C, and D is split: whoever finishes first takes it. With 4: one each.
 
@@ -118,7 +118,7 @@ All additive: old consumers keep working, and unknown `RunEvent` types should be
 
 - `RunEvent`: `receipt`, `receipt_failed` (HTS receipt NFT), `approval_required`, `approval_resolved` (human approval).
 - `AskRequest`: optional `maxPerCallTinybars`, optional `approvalAboveTinybars` (omit or "0" = fully autonomous).
-- `POST /api/runs/:runId/approve` with `ApproveRequest { approvalId, approve }` → `{ ok }`. The API (#4) calls `approvals.resolve(approvalId, approve)` from `packages/agent/src/policy.ts`.
+- `POST /api/runs/:runId/approve` with `ApproveRequest { approvalId, approve }` → `{ ok }`. The API (#4) calls `approvals.resolve(approvalId, approve, runId)` from `packages/agent/src/policy.ts`, with `runId` taken from the URL (an approval id from one run cannot approve another).
 - `GET /api/health` → `HealthReport` (from `checkHealth()`), `POST /api/replay` → replays `latestRecording()` over the SSE stream.
 
 Ports: server **3000**, agent **4000**, web **5173**. Env vars are in `.env.example`.

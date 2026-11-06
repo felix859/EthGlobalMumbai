@@ -38,18 +38,20 @@ The facilitator pays the network fee, so the agent's wallet only ever moves the 
 
 ## What makes it safe to give an agent money
 
-All rules are enforced **in code, before anything is signed**, never in the prompt. A prompt-injected model cannot talk its way past them.
+All rules are enforced **in code, before anything is signed**, never in the prompt. A prompt-injected model cannot talk its way past them. Spending is **reserve → commit**: the exact amount the server asks for is reserved atomically before signing, so parallel purchases cannot overspend, and once a signed payment has been sent it counts as spent even if the server then errors.
 
 | Control | What it does |
 |---|---|
-| **Run budget** | Total spend per run can never exceed what the user set |
+| **Run budget** | Total spend per run can never exceed what the user set, also under parallel purchases |
 | **Per-call cap** | No single purchase above a limit |
 | **Payee allowlist** | Only the configured merchant account can be paid; the server cannot name its own payee |
-| **Process-wide ceiling** | A cap across all runs, so repeated calls cannot drain the wallet |
-| **Human approval (optional)** | Purchases above a threshold pause until a person approves; no answer in time means no purchase |
-| **Origin and redirect checks** | Payments only go to the configured server, and redirects are never followed |
+| **Process-wide ceiling** | A cap across all runs in one agent process, shared atomically. In memory: a restart resets it, so keep the wallet itself low-balance |
+| **Price bound** | The server cannot charge more than the price it advertised; a higher 402 is refused before signing |
+| **Human approval (optional)** | Purchases above a threshold pause until a person approves, and the payment is then capped at the approved price; no answer in time means no purchase |
+| **Origin, redirect and size checks** | The paying fetch itself only pays trusted origins, never follows redirects, times out slow servers and caps response size |
+| **Untrusted seller text** | Catalogue descriptions and endpoint data are passed to the model as marked data, never in the system prompt |
 
-A security review with findings and fixes: [docs/security-review.md](docs/security-review.md).
+A security review and an independent code review, with findings and fixes: [docs/security-review.md](docs/security-review.md).
 
 ## Hedera services used
 
@@ -131,4 +133,4 @@ npm run dev                   # server, agent and web together 🚧 (server and 
 
 ## Team
 
-Built by the ETHGlobal Mumbai team: Felix, Gopi, Annemarie and Eva. 🚧 Final credits and links added at submission.
+Built by the ETHGlobal Mumbai team: Felix, Gopi, Annemarie, Eva and Helena. 🚧 Final credits and links added at submission.

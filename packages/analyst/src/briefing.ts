@@ -1,6 +1,7 @@
 // The Analyst's business logic, separated from HTTP so it can be tested: it BUYS upstream data with its own
 // wallet and returns one combined briefing. It earns the difference between its price and its costs.
 import type { PayResult } from "@pennyagent/agent/pay";
+import { safeEndpointUrl } from "@pennyagent/agent/security";
 
 export interface BriefingPaid {
   path: string;
@@ -28,7 +29,13 @@ export async function buildBriefing(
   const paid: BriefingPaid[] = [];
   let cost = 0n;
   for (const path of paths) {
-    const r = await payFor(new URL(path, upstreamUrl).toString());
+    let url: string;
+    try {
+      url = safeEndpointUrl(upstreamUrl, path); // refuses absolute or protocol-relative paths
+    } catch (e) {
+      throw new UpstreamError((e as Error).message);
+    }
+    const r = await payFor(url);
     if (!r.ok) throw new UpstreamError(`Upstream purchase of ${path} failed: ${r.reason}`);
     data[path.replace(/^\/api\//, "")] = r.data;
     paid.push({ path, txId: r.txId, amountTinybars: r.amount.toString() });
