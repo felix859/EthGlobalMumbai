@@ -110,6 +110,15 @@ export interface AuditMessage {
 }
 ```
 
+### Additive contract changes (extras #7, #8, #9)
+
+All additive: old consumers keep working, and unknown `RunEvent` types should be ignored.
+
+- `RunEvent`: `receipt`, `receipt_failed` (HTS receipt NFT), `approval_required`, `approval_resolved` (human approval).
+- `AskRequest`: optional `maxPerCallTinybars`, optional `approvalAboveTinybars` (omit or "0" = fully autonomous).
+- `POST /api/runs/:runId/approve` with `ApproveRequest { approvalId, approve }` → `{ ok }`. The API (#4) calls `approvals.resolve(approvalId, approve)` from `packages/agent/src/policy.ts`.
+- `GET /api/health` → `HealthReport` (from `checkHealth()`), `POST /api/replay` → replays `latestRecording()` over the SSE stream.
+
 Ports: server **3000**, agent **4000**, web **5173**. Env vars are in `.env.example`.
 
 ---

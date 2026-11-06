@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { hashscanTokenUrl, hashscanTxUrl, type AuditMessage, type Catalogue, type RunEvent } from "@pennyagent/shared";
 import { BudgetGuard } from "./budget.js";
 import { createPayingFetch, type PayResult } from "./pay.js";
+import { approvals, needsApproval, resolvePolicy, type ApprovalGate, type PolicyOptions } from "./policy.js";
 import { mintReceipt, type Receipt, type ReceiptSummary } from "./receipt.js";
 
 export interface RunOptions {
@@ -12,6 +13,10 @@ export interface RunOptions {
   emit: (e: RunEvent) => void;
   /** Called after each settled payment: the HCS audit logger plugs in here. */
   onPayment?: (p: AuditMessage) => void | Promise<void>;
+  /** Per-run spending policy; unset fields fall back to env (MAX_PRICE_PER_CALL, APPROVAL_ABOVE_TINYBARS). */
+  policy?: PolicyOptions;
+  /** Where human decisions arrive. Defaults to the process-wide gate the HTTP API resolves. */
+  gate?: ApprovalGate;
   /** Test seams; production uses the defaults. */
   deps?: Partial<RunDeps>;
 }
@@ -81,10 +86,11 @@ export async function runAgent(opts: RunOptions): Promise<void> {
     emit({ type: "started", runId, budgetTinybars: opts.budgetTinybars });
 
     const cat = await deps.fetchCatalogue();
-    const maxPerCall = BigInt(env("MAX_PRICE_PER_CALL", "10000000"));
+    const policy = resolvePolicy(opts.policy);
+    const gate = opts.gate ?? approvals;
     const guard = new BudgetGuard({
       runBudget: budget,
-      maxPerCall,
+      maxPerCall: policy.maxPerCall,
       allowedPayTo: cat.payTo,
       allowedAsset: env("PAYMENT_ASSET", "0.0.0"),
     });
@@ -134,6 +140,21 @@ export async function runAgent(opts: RunOptions): Promise<void> {
         if (!entry) {
           results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Unknown endpoint "${id}"` });
           continue;
+        }
+        // Human approval for big purchases. Only asked when the guard would allow the purchase anyway.
+        const price = BigInt(entry.priceTinybars);
+        if (needsApproval(policy, price) && guard.check({ amount: entry.priceTinybars, payTo: cat.payTo, asset: entry.asset }).ok) {
+          const approvalId = gate.newId();
+          const decision = gate.request(approvalId, policy.approvalTimeoutMs); // register before announcing
+          emit({ type: "approval_required", approvalId, endpointId: id, amountTinybars: entry.priceTinybars, timeoutMs: policy.approvalTimeoutMs, expiresAt: Date.now() + policy.approvalTimeoutMs });
+          const outcome = await decision;
+          emit({ type: "approval_resolved", approvalId, outcome });
+          if (outcome !== "approved") {
+            const reason = outcome === "rejected" ? "A human reviewer rejected this purchase" : "No human approval arrived in time";
+            emit({ type: "denied", endpointId: id, reason });
+            results.push({ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Purchase failed: ${reason}. Do not retry.` });
+            continue;
+          }
         }
         const r = await payFor(`${server}${entry.path}`);
         if (!r.ok) {

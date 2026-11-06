@@ -23,6 +23,16 @@ export interface Catalogue {
 export interface AskRequest {
   question: string;
   budgetTinybars: string;
+  /** Optional per-run spending policy (omit for defaults from the server's .env). */
+  maxPerCallTinybars?: string;
+  /** Purchases strictly above this pause for human approval. Omit or "0" = fully autonomous. */
+  approvalAboveTinybars?: string;
+}
+
+// POST /api/runs/:runId/approve   body: ApproveRequest → 200 { ok: boolean }   (ok=false: unknown or already decided)
+export interface ApproveRequest {
+  approvalId: string;
+  approve: boolean;
 }
 
 // GET /api/runs/:runId/events → text/event-stream, each `data:` is a RunEvent JSON
@@ -40,6 +50,8 @@ export type RunEvent =
       remainingTinybars: string;
     }
   | { type: "denied"; endpointId: string; reason: string }
+  | { type: "approval_required"; approvalId: string; endpointId: string; amountTinybars: string; timeoutMs: number; expiresAt: number }
+  | { type: "approval_resolved"; approvalId: string; outcome: "approved" | "rejected" | "timeout" }
   | { type: "audit"; topicId: string; sequenceNumber: string }
   | { type: "audit_failed"; reason: string }
   | { type: "receipt"; tokenId: string; serial: string; txId: string; hashscanUrl: string }
