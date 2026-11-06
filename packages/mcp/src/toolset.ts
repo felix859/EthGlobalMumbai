@@ -2,7 +2,7 @@
 // (any MCP client) gets a wallet that can only spend inside PennyAgent's guardrails.
 import { hashscanTxUrl, type Catalogue } from "@pennyagent/shared";
 import { BudgetGuard } from "@pennyagent/agent/budget";
-import type { PayResult } from "@pennyagent/agent/pay";
+import type { PayOptions, PayResult } from "@pennyagent/agent/pay";
 import { assertCatalogueTrusted, safeEndpointUrl } from "@pennyagent/agent/security";
 
 export interface ToolsetConfig {
@@ -14,8 +14,9 @@ export interface ToolsetConfig {
   maxPerCall: bigint;
   /** Purchases strictly above this are refused (there is no human-in-the-loop over MCP). */
   approvalAbove?: bigint;
+  asset?: string;
   fetchCatalogue: () => Promise<Catalogue>;
-  makePay: (guard: BudgetGuard) => (url: string) => Promise<PayResult>;
+  makePay: (guard: BudgetGuard, allowedOrigins: string[]) => (url: string, opts?: PayOptions) => Promise<PayResult>;
 }
 
 export interface ToolResult {
@@ -25,17 +26,24 @@ export interface ToolResult {
 }
 const ok = (v: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(v, null, 2) }] });
 const err = (m: string): ToolResult => ({ content: [{ type: "text", text: m }], isError: true });
-const hbar = (t: bigint | string) => `${Number(t) / 1e8} HBAR`;
+const hbar = (t: bigint | string) => {
+  const v = BigInt(t);
+  const frac = (v % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
+  return `${v / 100_000_000n}${frac ? `.${frac}` : ""} HBAR`;
+};
 
 export class Toolset {
   private guard: BudgetGuard;
-  private payFor: (url: string) => Promise<PayResult>;
-  private purchases: { endpointId: string; amountTinybars: string; txId: string; hashscanUrl: string }[] = [];
+  private payFor: (url: string, opts?: PayOptions) => Promise<PayResult>;
+  private purchases: { endpointId: string; amountTinybars: string; txId?: string; hashscanUrl?: string; failed?: string }[] = [];
+  private readonly origins: string[];
   private cat?: Promise<Catalogue>;
 
   constructor(private cfg: ToolsetConfig) {
-    this.guard = new BudgetGuard({ runBudget: cfg.sessionBudget, maxPerCall: cfg.maxPerCall, allowedPayTo: cfg.trustedPayees, allowedAsset: "0.0.0" });
-    this.payFor = cfg.makePay(this.guard);
+    // One guard for the whole session. Its reservations are atomic, so parallel tool calls cannot overspend.
+    this.guard = new BudgetGuard({ runBudget: cfg.sessionBudget, maxPerCall: cfg.maxPerCall, allowedPayTo: cfg.trustedPayees, allowedAsset: cfg.asset ?? "0.0.0" });
+    this.origins = [cfg.serverUrl, ...cfg.trustedOrigins];
+    this.payFor = cfg.makePay(this.guard, this.origins);
   }
 
   /** Fetched once; a catalogue naming an untrusted payee is rejected outright. */
@@ -76,12 +84,16 @@ export class Toolset {
     }
     let url: string;
     try {
-      url = safeEndpointUrl(entry.baseUrl ?? this.cfg.serverUrl, entry.path, [this.cfg.serverUrl, ...this.cfg.trustedOrigins]);
+      url = safeEndpointUrl(entry.baseUrl ?? this.cfg.serverUrl, entry.path, this.origins);
     } catch (e) {
       return err(e instanceof Error ? e.message : String(e));
     }
-    const r = await this.payFor(url);
-    if (!r.ok) return err(`Purchase failed: ${r.reason}. Do not retry.`);
+    // maxAmount: the 402 may not charge more than the advertised (and threshold-checked) price.
+    const r = await this.payFor(url, { maxAmount: price });
+    if (!r.ok) {
+      if (r.chargedTinybars !== undefined) this.purchases.push({ endpointId, amountTinybars: r.chargedTinybars.toString(), failed: r.reason });
+      return err(`Purchase failed: ${r.reason}. Do not retry.`);
+    }
     const rec = { endpointId, amountTinybars: r.amount.toString(), txId: r.txId, hashscanUrl: hashscanTxUrl(r.txId) };
     this.purchases.push(rec);
     return ok({

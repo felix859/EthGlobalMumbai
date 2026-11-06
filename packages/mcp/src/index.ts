@@ -6,8 +6,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { BudgetGuard } from "@pennyagent/agent/budget";
 import { createPayingFetch } from "@pennyagent/agent/pay";
-import { defaultFetchCatalogue } from "@pennyagent/agent/run";
-import { parseList } from "@pennyagent/agent/security";
+import { fetchCatalogues } from "@pennyagent/agent/catalogue";
+import { DEFAULT_MAX_RUN_BUDGET, parseList, parseTinybars } from "@pennyagent/agent/security";
 import { Toolset } from "./toolset.js";
 
 const need = (k: string) => {
@@ -16,17 +16,24 @@ const need = (k: string) => {
   return v;
 };
 const serverUrl = process.env.SERVER_URL ?? "http://localhost:3000";
-const approvalAbove = process.env.APPROVAL_ABOVE_TINYBARS ? BigInt(process.env.APPROVAL_ABOVE_TINYBARS) : undefined;
+const asset = process.env.PAYMENT_ASSET || "0.0.0";
+const approvalAbove = parseTinybars(process.env.APPROVAL_ABOVE_TINYBARS, "APPROVAL_ABOVE_TINYBARS", 0n, true);
+// The session budget can never exceed the per-run ceiling the agent uses (default 2 HBAR).
+const ceiling = parseTinybars(process.env.MAX_RUN_BUDGET_TINYBARS, "MAX_RUN_BUDGET_TINYBARS", DEFAULT_MAX_RUN_BUDGET);
+const requested = parseTinybars(process.env.MCP_SESSION_BUDGET_TINYBARS, "MCP_SESSION_BUDGET_TINYBARS", 20_000_000n); // 0.2 HBAR
+if (requested > ceiling) throw new Error(`MCP_SESSION_BUDGET_TINYBARS (${requested}) exceeds MAX_RUN_BUDGET_TINYBARS (${ceiling})`);
 
 const toolset = new Toolset({
   serverUrl,
   trustedPayees: parseList(need("MERCHANT_ACCOUNT_ID")),
   trustedOrigins: parseList(process.env.TRUSTED_ORIGINS),
-  sessionBudget: BigInt(process.env.MCP_SESSION_BUDGET_TINYBARS ?? "20000000"), // 0.2 HBAR
-  maxPerCall: BigInt(process.env.MAX_PRICE_PER_CALL ?? "10000000"),
-  approvalAbove: approvalAbove && approvalAbove > 0n ? approvalAbove : undefined,
-  fetchCatalogue: defaultFetchCatalogue,
-  makePay: (guard: BudgetGuard) => createPayingFetch({ accountId: need("AGENT_ACCOUNT_ID"), privateKeyHex: need("AGENT_PRIVATE_KEY"), guard }),
+  sessionBudget: requested,
+  maxPerCall: parseTinybars(process.env.MAX_PRICE_PER_CALL, "MAX_PRICE_PER_CALL", 10_000_000n),
+  approvalAbove: approvalAbove > 0n ? approvalAbove : undefined,
+  asset,
+  fetchCatalogue: () => fetchCatalogues(serverUrl),
+  makePay: (guard: BudgetGuard, allowedOrigins: string[]) =>
+    createPayingFetch({ accountId: need("AGENT_ACCOUNT_ID"), privateKeyHex: need("AGENT_PRIVATE_KEY"), guard, allowedOrigins, asset }),
 });
 
 const server = new McpServer({ name: "pennyagent", version: "0.1.0" });

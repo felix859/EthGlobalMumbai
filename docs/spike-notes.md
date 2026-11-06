@@ -28,7 +28,7 @@ Working code: `spike/server.ts` and `spike/client.ts`. Run (two terminals, from 
    `All payment requirements were rejected by spendControls`. Use
    `x402Client.fromConfig({ schemes: [{ network: "hedera:*", client: new ExactHederaScheme(signer) }], spendControls: { allowedAssets: [{ network: "hedera:testnet", asset: "0.0.0", maxAmountPerPayment: "10000000" }] } })`.
 3. **Workstream B: this is a built-in spend control.** `maxAmountPerPayment` (atomic units) is our per-call cap.
-   The run budget and `payTo` allowlist still belong in our own `BudgetGuard`; the client also supports `policies`
+   The run budget and `payTo` allowlist still belong in our own `BudgetGuard` (reserve/commit, see `packages/agent/src/pay.ts`, which uses `onBeforePaymentCreation` / `onAfterPaymentCreation` to reserve the real 402 amount); the client also supports `policies`
    (`(version, requirements[]) => requirements[]`) which is a clean place to enforce them *before* signing.
 4. **Use `PrivateKey` re-exported from `@x402/hedera`**, not from `@hiero-ledger/sdk` directly. Two copies of the SDK break `instanceof` checks (`t.startsWith is not a function`).
 5. Key format: the agent key is ECDSA, so `PrivateKey.fromStringECDSA(hex)`.

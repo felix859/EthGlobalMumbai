@@ -16,12 +16,11 @@ const mk = (over: Partial<ToolsetConfig> = {}) => {
   const t = new Toolset({
     serverUrl: "http://localhost:3000", trustedPayees: ["0.0.111", "0.0.222"], trustedOrigins: ["http://localhost:3100"],
     sessionBudget: 6_000_000n, maxPerCall: 5_000_000n, fetchCatalogue: async () => cat,
-    makePay: (guard) => async (url) => {
+    makePay: (guard) => async (url, opts) => {
       urls.push(url);
       const e = cat.endpoints.find((x) => url.endsWith(x.path))!;
-      const v = guard.check({ amount: e.priceTinybars, payTo: e.payTo ?? cat.payTo, asset: "0.0.0" });
+      const v = guard.spend({ amount: e.priceTinybars, payTo: e.payTo ?? cat.payTo, asset: "0.0.0" }, opts?.maxAmount);
       if (!v.ok) return { ok: false, reason: v.reason };
-      guard.record(BigInt(e.priceTinybars));
       return { ok: true, data: { ok: e.id }, txId: "0.0.1@5", amount: BigInt(e.priceTinybars), asset: "0.0.0" };
     },
     ...over,
@@ -82,5 +81,22 @@ describe("MCP Toolset", () => {
     const j = JSON.parse(text(t.budgetStatus()));
     expect(j).toMatchObject({ spent: "0.01 HBAR", remaining: "0.05 HBAR" });
     expect(j.purchases).toHaveLength(1);
+  });
+  it("parallel buy_data calls cannot exceed the session budget", async () => {
+    const { t } = mk({ sessionBudget: 2_000_000n });
+    const results = await Promise.all(Array.from({ length: 5 }, () => t.buyData("weather")));
+    expect(results.filter((r) => !r.isError)).toHaveLength(2);
+    expect(JSON.parse(text(t.budgetStatus())).spent).toBe("0.02 HBAR");
+  });
+  it("passes the advertised price as maxAmount", async () => {
+    const seen: (bigint | undefined)[] = [];
+    const { t } = mk({ makePay: () => async (_u, opts) => (seen.push(opts?.maxAmount), { ok: false, reason: "x" }) });
+    await t.buyData("headlines");
+    expect(seen).toEqual([5_000_000n]);
+  });
+  it("records a failed-but-charged purchase in budget_status", async () => {
+    const { t } = mk({ makePay: () => async () => ({ ok: false, reason: "Endpoint returned HTTP 500", chargedTinybars: 1_000_000n }) });
+    await t.buyData("weather");
+    expect(JSON.parse(text(t.budgetStatus())).purchases[0]).toMatchObject({ endpointId: "weather", failed: "Endpoint returned HTTP 500" });
   });
 });
