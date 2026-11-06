@@ -48,4 +48,13 @@ describe("BudgetGuard", () => {
     const g = new BudgetGuard({ ...cfg, runBudget: 1_000_000n });
     expect(() => g.record(2_000_000n)).toThrow();
   });
+
+  it("accepts any payee in an allowlist of several, still refuses others", () => {
+    const g = new BudgetGuard({ ...cfg, allowedPayTo: ["0.0.111", "0.0.222"] });
+    expect(g.check({ ...ok, payTo: "0.0.222" }).ok).toBe(true);
+    expect(g.check({ ...ok, payTo: "0.0.333" }).ok).toBe(false);
+  });
+  it("refuses to be built with an empty allowlist", () => {
+    expect(() => new BudgetGuard({ ...cfg, allowedPayTo: [] })).toThrow();
+  });
 });

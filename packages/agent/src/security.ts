@@ -27,11 +27,14 @@ export function validateRunInput(
  * Builds the URL to pay, and refuses anything that leaves the configured server:
  * absolute URLs, protocol-relative "//host", and "@host" tricks all change the origin.
  */
-export function safeEndpointUrl(serverUrl: string, path: string): string {
+export function safeEndpointUrl(serverUrl: string, path: string, allowedOrigins?: string[]): string {
   if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
     throw new Error(`Refusing endpoint path "${path}"`);
   }
   const base = new URL(serverUrl);
+  // With an allowlist, the seller's origin must be on it; without one, only the configured server itself.
+  const allowed = new Set((allowedOrigins ?? [serverUrl]).map((o) => new URL(o).origin));
+  if (!allowed.has(base.origin)) throw new Error(`Origin ${base.origin} is not a trusted seller`);
   const url = new URL(path, base);
   if (url.origin !== base.origin) throw new Error(`Endpoint "${path}" is not on the configured server`);
   return url.toString();
