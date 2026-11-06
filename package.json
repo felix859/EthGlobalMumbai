@@ -12,6 +12,7 @@
     "dev:web": "npm run dev -w @pennyagent/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run --passWithNoTests",
+    "e2e": "tsx --env-file=.env scripts/e2e.ts",
     "setup:hedera": "tsx --env-file=.env scripts/hedera-setup.ts",
     "setup:receipt": "tsx --env-file=.env scripts/create-receipt-token.ts",
     "setup:identity": "tsx --env-file=.env scripts/register-agent.ts",

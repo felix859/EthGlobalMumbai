@@ -18,6 +18,8 @@ import {
 } from "./security.js";
 
 export interface RunOptions {
+  /** Lets the caller (the HTTP API) pick the id it already returned to the client. Defaults to a fresh UUID. */
+  runId?: string;
   question: string;
   budgetTinybars: string;
   emit: (e: RunEvent) => void;
@@ -118,7 +120,7 @@ ${question}`;
 
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { question, emit } = opts;
-  const runId = randomUUID();
+  const runId = opts.runId ?? randomUUID();
   try {
     const d = opts.deps ?? {};
     const deps: RunDeps = {

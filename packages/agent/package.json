@@ -24,6 +24,8 @@
     "./catalogue": "./src/catalogue.ts",
     "./identity": "./src/identity.ts",
     "./replay": "./src/replay.ts",
-    "./health": "./src/health.ts"
+    "./health": "./src/health.ts",
+    "./audit": "./src/audit.ts",
+    "./api": "./src/api.ts"
   }
 }
