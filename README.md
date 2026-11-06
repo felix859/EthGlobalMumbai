@@ -71,6 +71,22 @@ Real testnet transactions from development:
 
 🚧 Final demo run: transaction ids, screenshots and the demo video link are added here at the end.
 
+## Agents that pay each other
+
+PennyAgent is not only a buyer. The **Analyst agent** (`packages/analyst`) is a seller *and* a buyer with its own wallet: it sells a combined data briefing over x402 and pays the data server (also over x402) to produce it. A two-hop chain, both hops verified on testnet:
+
+`buyer agent ──0.03 HBAR──▶ Analyst ──0.01 HBAR──▶ data server`  (the Analyst keeps the margin)
+
+The buyer trusts only the sellers and origins in its own config, never ones named by a catalogue.
+
+## Agent identity
+
+The agent has a Universal Agent ID following the [HCS-14 draft](https://hol.org/docs/standards/hcs-14/) AID method (SHA-384 over canonical JSON, Base58), and a profile published on an HCS topic. Honest limits: HCS-14 is a draft, and the profile is a single HCS message rather than a full HCS-1 inscription, so it is HCS-11-*shaped*, not compliant.
+
+## MCP server
+
+`packages/mcp` exposes the guarded wallet as MCP tools (`list_catalogue`, `buy_data`, `budget_status`), so any MCP client such as Claude gets a wallet that can only spend inside the same guardrails. See [docs/mcp.md](docs/mcp.md).
+
 ## Demo safety net
 
 Testnets and facilitators fail at the worst time. Every real run is recorded to disk and can be replayed through the same event stream, and a health check shows whether the facilitator, the server and the agent's balance are OK.
@@ -83,6 +99,8 @@ packages/server   x402-gated data API: weather, air quality, HBAR price, headlin
 packages/agent    spending guard, paying fetch, Claude tool-use loop, approval,
                   receipt NFT, replay, health                                        (port 4000)
 packages/web      dashboard: ask, live payments, audit log, approvals                (port 5173)
+packages/analyst  seller+buyer agent: sells briefings, buys its data                 (port 3100)
+packages/mcp      MCP server exposing the guarded wallet as tools
 scripts/          one-off Hedera setup (merchant account, audit topic, receipt NFT)
 spike/            the first working x402 payment, kept as a reference
 docs/             design spec, implementation plan, spike notes, security review
