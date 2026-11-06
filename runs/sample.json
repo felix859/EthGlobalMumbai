@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-06T15:30:00.000Z",
+  "question": "Should I carry an umbrella in Mumbai today?",
+  "_note": "Hand-made fixture for the UI and the demo fallback. The two transaction ids are REAL testnet payments from our spike (0.01 HBAR each) reused as stand-ins; the answer text was written by hand, not produced by a model run.",
+  "events": [
+    { "t": 0,    "event": { "type": "started", "runId": "sample-run", "budgetTinybars": "50000000" } },
+    { "t": 900,  "event": { "type": "thinking", "text": "I need the forecast and air quality. Buying both." } },
+    { "t": 2600, "event": { "type": "payment", "endpointId": "weather", "amountTinybars": "1000000", "asset": "0.0.0", "txId": "0.0.7162784@1793978281.672658259", "hashscanUrl": "https://hashscan.io/testnet/transaction/0.0.7162784%401793978281.672658259", "spentTinybars": "1000000", "remainingTinybars": "49000000" } },
+    { "t": 2900, "event": { "type": "audit", "topicId": "0.0.11341094", "sequenceNumber": "1" } },
+    { "t": 4800, "event": { "type": "payment", "endpointId": "air-quality", "amountTinybars": "1000000", "asset": "0.0.0", "txId": "0.0.7162784@1793978936.089904046", "hashscanUrl": "https://hashscan.io/testnet/transaction/0.0.7162784%401793978936.089904046", "spentTinybars": "2000000", "remainingTinybars": "48000000" } },
+    { "t": 5100, "event": { "type": "audit", "topicId": "0.0.11341094", "sequenceNumber": "2" } },
+    { "t": 5600, "event": { "type": "denied", "endpointId": "headlines", "reason": "Price 5000000 exceeds the per-call cap of 2000000" } },
+    { "t": 7200, "event": { "type": "answer", "text": "Sample answer: rain is likely this evening, so carry an umbrella. Spent 0.02 HBAR on 2 endpoints (weather, air-quality); headlines was refused by the spending cap." } }
+  ]
+}
