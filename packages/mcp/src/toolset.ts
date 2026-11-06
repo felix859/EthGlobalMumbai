@@ -1,9 +1,9 @@
 // The logic behind the MCP tools, separate from the MCP plumbing so it can be tested. Whoever calls these tools
 // (any MCP client) gets a wallet that can only spend inside PennyAgent's guardrails.
-import { hashscanTxUrl, type Catalogue } from "@pennyagent/shared";
+import { formatHbar, hashscanTxUrl, type Catalogue } from "@pennyagent/shared";
 import { BudgetGuard } from "@pennyagent/agent/budget";
 import type { PayOptions, PayResult } from "@pennyagent/agent/pay";
-import { assertCatalogueTrusted, safeEndpointUrl } from "@pennyagent/agent/security";
+import { safeEndpointUrl, trustedCatalogue } from "@pennyagent/agent/security";
 
 export interface ToolsetConfig {
   serverUrl: string;
@@ -26,11 +26,7 @@ export interface ToolResult {
 }
 const ok = (v: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(v, null, 2) }] });
 const err = (m: string): ToolResult => ({ content: [{ type: "text", text: m }], isError: true });
-const hbar = (t: bigint | string) => {
-  const v = BigInt(t);
-  const frac = (v % 100_000_000n).toString().padStart(8, "0").replace(/0+$/, "");
-  return `${v / 100_000_000n}${frac ? `.${frac}` : ""} HBAR`;
-};
+const hbar = (t: bigint | string) => `${formatHbar(t)} HBAR`;
 
 export class Toolset {
   private guard: BudgetGuard;
@@ -48,10 +44,7 @@ export class Toolset {
 
   /** Fetched once; a catalogue naming an untrusted payee is rejected outright. */
   private catalogue(): Promise<Catalogue> {
-    return (this.cat ??= this.cfg.fetchCatalogue().then((c) => {
-      assertCatalogueTrusted(c, this.cfg.trustedPayees);
-      return c;
-    }));
+    return (this.cat ??= this.cfg.fetchCatalogue().then((c) => trustedCatalogue(c, this.cfg.trustedPayees)));
   }
 
   async listCatalogue(): Promise<ToolResult> {
@@ -79,6 +72,8 @@ export class Toolset {
     const entry = c.endpoints.find((x) => x.id === endpointId);
     if (!entry) return err(`Unknown endpoint "${endpointId}". Call list_catalogue first.`);
     const price = BigInt(entry.priceTinybars);
+    const pre = this.guard.check({ amount: entry.priceTinybars, payTo: entry.payTo ?? c.payTo, asset: entry.asset });
+    if (!pre.ok) return err(`Purchase refused: ${pre.reason}`);
     if (this.cfg.approvalAbove !== undefined && price > this.cfg.approvalAbove) {
       return err(`Purchase refused: ${hbar(price)} is above the approval threshold of ${hbar(this.cfg.approvalAbove)}, and human approval is not available over MCP.`);
     }

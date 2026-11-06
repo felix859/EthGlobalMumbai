@@ -71,3 +71,16 @@ describe("ApprovalGate", () => {
     expect(await p).toBe("approved");
   });
 });
+
+describe("resolvePolicy: callers can only tighten the operator's limits", () => {
+  it("clamps a requested cap to the operator cap, allows a lower one", () => {
+    expect(resolvePolicy({ maxPerCallTinybars: "999999999" }, { MAX_PRICE_PER_CALL: "2000000" }).maxPerCall).toBe(2_000_000n);
+    expect(resolvePolicy({ maxPerCallTinybars: "1000" }, { MAX_PRICE_PER_CALL: "2000000" }).maxPerCall).toBe(1000n);
+  });
+  it("takes the stricter of two approval thresholds, and '0' cannot remove the operator's", () => {
+    expect(resolvePolicy({ approvalAboveTinybars: "5" }, { APPROVAL_ABOVE_TINYBARS: "9" }).approvalAbove).toBe(5n);
+    expect(resolvePolicy({ approvalAboveTinybars: "50" }, { APPROVAL_ABOVE_TINYBARS: "9" }).approvalAbove).toBe(9n);
+    expect(resolvePolicy({ approvalAboveTinybars: "0" }, { APPROVAL_ABOVE_TINYBARS: "9" }).approvalAbove).toBe(9n);
+    expect(resolvePolicy({ approvalAboveTinybars: "7" }, {}).approvalAbove).toBe(7n);
+  });
+});

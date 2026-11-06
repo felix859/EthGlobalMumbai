@@ -111,7 +111,10 @@ export function createSources(f: Fetch = fetch, loc: { lat: number; lon: number 
       const hn = "https://hacker-news.firebaseio.com/v0";
       const ids = await getJson<number[]>(f, `${hn}/topstories.json`);
       if (!Array.isArray(ids)) throw new UpstreamError("hacker news: unexpected response");
-      const items = await Promise.all(ids.slice(0, 5).map((id) => getJson<any>(f, `${hn}/item/${id}.json`)));
+      // One failing item must not fail the whole endpoint: keep the ones that loaded.
+      const settled = await Promise.allSettled(ids.slice(0, 5).map((id) => getJson<any>(f, `${hn}/item/${id}.json`)));
+      const items = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+      if (items.length === 0) throw new UpstreamError("hacker news: no headlines could be loaded");
       return {
         source: "Hacker News",
         headlines: items

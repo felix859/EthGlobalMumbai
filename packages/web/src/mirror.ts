@@ -5,6 +5,8 @@ import type { AuditMessage } from "@pennyagent/shared";
 export interface AuditRow {
   sequenceNumber: number;
   consensusTimestamp: string;
+  /** Account that paid for (submitted) the message. */
+  payer?: string;
   message?: AuditMessage;
   /** Set when the topic message is not a valid PennyAgent audit message. */
   raw?: string;
@@ -32,11 +34,15 @@ export function parseAuditMessage(text: string): AuditMessage | undefined {
   return m as AuditMessage;
 }
 
-export async function fetchAuditRows(topicId: string, limit = 25, fetchImpl: typeof fetch = fetch): Promise<AuditRow[]> {
+/**
+ * Reads the topic. The topic has no submit key, so anyone can post to it: a message only counts as an audit entry
+ * when it was submitted by `trustedPayer` (the agent's own account). Everything else is shown as "not from the agent".
+ */
+export async function fetchAuditRows(topicId: string, trustedPayer?: string, limit = 25, fetchImpl: typeof fetch = fetch): Promise<AuditRow[]> {
   if (!/^0\.0\.[0-9]{1,12}$/.test(topicId)) throw new Error(`Invalid topic id "${topicId}"`);
   const r = await fetchImpl(`${MIRROR}/api/v1/topics/${topicId}/messages?order=desc&limit=${limit}`, { signal: AbortSignal.timeout(8000) });
   if (!r.ok) throw new Error(`Mirror node returned HTTP ${r.status}`);
-  const body = (await r.json()) as { messages?: { sequence_number: number; consensus_timestamp: string; message: string }[] };
+  const body = (await r.json()) as { messages?: { sequence_number: number; consensus_timestamp: string; message: string; payer_account_id?: string }[] };
   return (body.messages ?? []).map((m) => {
     let text = "";
     try {
@@ -44,7 +50,13 @@ export async function fetchAuditRows(topicId: string, limit = 25, fetchImpl: typ
     } catch {
       /* leave empty */
     }
-    const message = parseAuditMessage(text);
-    return { sequenceNumber: m.sequence_number, consensusTimestamp: m.consensus_timestamp, ...(message ? { message } : { raw: text.slice(0, 120) }) };
+    const fromAgent = trustedPayer !== undefined && m.payer_account_id === trustedPayer;
+    const message = fromAgent ? parseAuditMessage(text) : undefined;
+    return {
+      sequenceNumber: m.sequence_number,
+      consensusTimestamp: m.consensus_timestamp,
+      payer: m.payer_account_id,
+      ...(message ? { message } : { raw: text.slice(0, 120) }),
+    };
   });
 }

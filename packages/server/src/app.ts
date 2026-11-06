@@ -48,7 +48,8 @@ export function createApp({ config, facilitator, caches }: AppDeps): Express {
   // issuing a 402, so a buyer never signs a payment for data we cannot deliver. The value it loads is cached,
   // so the paid request right after is served from memory.
   app.get("/api/:id", async (req: Request, res: Response, next: NextFunction) => {
-    const cache = caches[req.params.id as DataEndpointId];
+    // Own keys only: `/api/constructor` or `/api/toString` must be a 404, not an inherited Object method.
+    const cache = Object.hasOwn(caches, req.params.id) ? caches[req.params.id as DataEndpointId] : undefined;
     if (!cache) return res.status(404).json({ error: "Unknown endpoint", catalogue: "/catalogue" });
     try {
       res.locals.cached = await cache.get();

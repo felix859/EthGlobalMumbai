@@ -23,6 +23,7 @@ export function App() {
   const [run, dispatch] = useReducer(reduceRun, initialRunState);
   const [streamError, setStreamError] = useState<string>();
   const [auditKey, setAuditKey] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const stop = useRef<() => void>();
 
   useEffect(() => {
@@ -37,9 +38,11 @@ export function App() {
   }, [api]);
 
   const follow = useCallback(
-    (runId: string) => {
+    (runId: string, budgetTinybars?: string) => {
       stop.current?.();
       setStreamError(undefined);
+      // Show the run right away (and know its id for approvals) even before the first event arrives.
+      dispatch({ type: "_seed", runId, budgetTinybars });
       stop.current = api.subscribe(
         runId,
         (e) => {
@@ -47,24 +50,33 @@ export function App() {
           if (e.type === "audit" || e.type === "answer") setAuditKey((k) => k + 1);
         },
         setStreamError,
+        () => setAuditKey((k) => k + 1),
       );
     },
     [api],
   );
 
   const ask = async (req: AskRequest) => {
+    if (submitting) return;
+    setSubmitting(true);
     setStreamError(undefined);
     try {
-      follow((await api.ask(req)).runId);
+      follow((await api.ask(req)).runId, req.budgetTinybars);
     } catch (e) {
       setStreamError((e as Error).message);
+    } finally {
+      setSubmitting(false);
     }
   };
   const replay = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       follow((await api.replay()).runId);
     } catch (e) {
       setStreamError((e as Error).message);
+    } finally {
+      setSubmitting(false);
     }
   };
   const decide = async (approvalId: string, approve: boolean) => {
@@ -86,7 +98,7 @@ export function App() {
         </div>
       )}
       <main className="grid">
-        <AskPanel busy={run.status === "running"} onAsk={ask} />
+        <AskPanel busy={submitting || run.status === "running"} onAsk={ask} />
         <div className="run-col">
           <RunPanel run={run} onDecide={decide} />
           {streamError && (
@@ -95,11 +107,11 @@ export function App() {
             </p>
           )}
         </div>
-        <AuditPanel topicId={config?.topicId} refreshKey={auditKey} />
+        <AuditPanel topicId={config?.topicId} agentAccount={config?.agentAccount} refreshKey={auditKey} />
       </main>
       <footer className="footer muted small">
         <span>Testnet only. Spending limits are enforced in code before anything is signed.</span>
-        <button type="button" className="link-btn" onClick={replay} disabled={run.status === "running"}>
+        <button type="button" className="link-btn" onClick={replay} disabled={submitting || run.status === "running"}>
           Replay last run
         </button>
       </footer>

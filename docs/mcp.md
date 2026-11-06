@@ -14,7 +14,8 @@ Gives any MCP client (Claude Desktop, Claude Code, ...) a Hedera wallet that can
 
 - **Session budget** (`MCP_SESSION_BUDGET_TINYBARS`, default 0.2 HBAR, never above `MAX_RUN_BUDGET_TINYBARS`) and **per-call cap** (`MAX_PRICE_PER_CALL`), enforced in code with atomic reservations: parallel `buy_data` calls cannot overspend.
 - **Price bound:** a server cannot charge more than the price in its catalogue; a higher 402 is refused before signing. A payment that was signed and sent counts as spent even if the server then errors.
-- **Trusted payees only** (`MERCHANT_ACCOUNT_ID`, comma separated) and **trusted origins** (`TRUSTED_ORIGINS`). A catalogue naming anyone else is rejected, and nothing is paid.
+- **Trusted payees only** (`TRUSTED_PAYEES`, comma separated, defaulting to `MERCHANT_ACCOUNT_ID`) and **trusted origins** (`TRUSTED_ORIGINS`). A main catalogue naming anyone else is rejected; an extra seller naming an untrusted payee is skipped. Nothing untrusted is paid.
+- **Per process:** each MCP server process has its own session budget, in memory. Several processes (or a restart) each get a fresh budget, so keep the wallet itself low-balance.
 - **No human approval over MCP:** purchases above `APPROVAL_ABOVE_TINYBARS` are refused rather than paid.
 - Returned data is marked as untrusted. Treat it as data, never as instructions.
 - Testnet only.

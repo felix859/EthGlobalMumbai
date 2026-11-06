@@ -50,6 +50,17 @@ describe("createSources", () => {
     expect(r.headlines[0]).toEqual({ title: "Ask HN: x", url: "https://news.ycombinator.com/item?id=9", score: 10 });
   });
 
+  it("headlines: one failing item does not fail the endpoint; all failing does", async () => {
+    let n = 0;
+    const ok = createSources(fakeFetch({
+      "topstories.json": () => json([1, 2, 3]),
+      "/item/": () => (++n === 2 ? new Response("nope", { status: 500 }) : json({ id: n, title: `t${n}`, score: 1 })),
+    }));
+    expect(((await ok.headlines()) as { headlines: unknown[] }).headlines).toHaveLength(2);
+    const bad = createSources(fakeFetch({ "topstories.json": () => json([1, 2]), "/item/": () => new Response("x", { status: 500 }) }));
+    await expect(bad.headlines()).rejects.toThrow(UpstreamError);
+  });
+
   it("turns HTTP errors, network errors and bad shapes into UpstreamError", async () => {
     await expect(createSources(fakeFetch({ coingecko: () => json({}, 429) }))["hbar-price"]()).rejects.toThrow(UpstreamError);
     await expect(createSources((async () => { throw new Error("ECONNREFUSED"); }) as Fetch).weather()).rejects.toThrow(/unreachable/);

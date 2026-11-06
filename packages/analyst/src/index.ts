@@ -7,8 +7,9 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import type { Catalogue } from "@pennyagent/shared";
 import { createPayingFetch } from "@pennyagent/agent/pay";
+import { fetchCatalogues } from "@pennyagent/agent/catalogue";
 import { parseList, parseTinybars } from "@pennyagent/agent/security";
-import { createBriefingService } from "./service.js";
+import { createBriefingService, upstreamCost } from "./service.js";
 
 const need = (k: string) => {
   const v = process.env[k];
@@ -19,6 +20,18 @@ const port = Number(process.env.ANALYST_PORT ?? 3100);
 const analystAccount = need("ANALYST_ACCOUNT_ID");
 const price = parseTinybars(process.env.BRIEFING_PRICE_TINYBARS, "BRIEFING_PRICE_TINYBARS", 3_000_000n);
 
+const upstreamUrl = process.env.UPSTREAM_URL ?? process.env.SERVER_URL ?? "http://localhost:3000";
+const paths = parseList(process.env.UPSTREAM_PATHS ?? "/api/weather");
+
+// Startup affordability check: refuse to sell briefings that would cost more upstream than the cost cap allows.
+let upstreamCostTinybars: bigint | undefined;
+try {
+  upstreamCostTinybars = upstreamCost(await fetchCatalogues(upstreamUrl, []), paths);
+  console.log(`[analyst] upstream cost per briefing: ${upstreamCostTinybars} tinybars`);
+} catch (e) {
+  console.warn(`[analyst] could not price the upstream paths (${(e as Error).message}); the per-sale cost cap still applies`);
+}
+
 const service = createBriefingService(
   {
     priceTinybars: price,
@@ -27,9 +40,10 @@ const service = createBriefingService(
     maxPerCallTinybars: parseTinybars(process.env.MAX_PRICE_PER_CALL, "MAX_PRICE_PER_CALL", 10_000_000n),
     maxConcurrent: Number(process.env.BRIEFING_MAX_CONCURRENT ?? 2),
     maxPerMinute: Number(process.env.BRIEFING_MAX_PER_MINUTE ?? 10),
-    upstreamUrl: process.env.UPSTREAM_URL ?? process.env.SERVER_URL ?? "http://localhost:3000",
-    paths: parseList(process.env.UPSTREAM_PATHS ?? "/api/weather,/api/hbar-price"),
+    upstreamUrl,
+    paths,
     dataMerchant: need("MERCHANT_ACCOUNT_ID"),
+    upstreamCostTinybars,
   },
   (guard, allowedOrigins) => createPayingFetch({ accountId: analystAccount, privateKeyHex: need("ANALYST_PRIVATE_KEY"), guard, allowedOrigins }),
 );
@@ -52,7 +66,6 @@ app.use(
   ),
 );
 
-const paths = parseList(process.env.UPSTREAM_PATHS ?? "/api/weather,/api/hbar-price");
 app.get("/catalogue", (_req, res) => {
   const cat: Catalogue = {
     network: "hedera:testnet",

@@ -13,15 +13,28 @@ export const parseList = (v: string | string[] | undefined): string[] =>
   (Array.isArray(v) ? v : (v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
 
 /**
- * Refuses a catalogue that names any payee the buyer has not itself configured. The allowlist always comes from the
- * buyer's own config, never from the catalogue, so a spoofed or compromised seller cannot name its own account.
+ * Who a BUYER may pay: env TRUSTED_PAYEES (comma separated) if set, else the single MERCHANT_ACCOUNT_ID.
+ * MERCHANT_ACCOUNT_ID stays the data server's own payee (one id); TRUSTED_PAYEES adds e.g. the Analyst agent.
  */
-export function assertCatalogueTrusted(cat: { payTo: string; endpoints: { id: string; payTo?: string }[] }, trusted: string[]): void {
+export const buyerTrustedPayees = (env: Record<string, string | undefined> = process.env): string[] =>
+  parseList(env.TRUSTED_PAYEES || env.MERCHANT_ACCOUNT_ID);
+
+/**
+ * Applies the buyer's own payee allowlist to a catalogue. It never comes from the catalogue itself, so a spoofed or
+ * compromised seller cannot name its own account. The main seller must be trusted (else the run is refused); entries
+ * from other sellers whose payee is not trusted are DROPPED, so one bad extra seller cannot block every run.
+ */
+export function trustedCatalogue<C extends { payTo: string; endpoints: { id: string; payTo?: string }[] }>(cat: C, trusted: string[]): C {
   if (trusted.length === 0) throw new Error("MERCHANT_ACCOUNT_ID must be configured: the agent will not trust the server to name its own payee");
   if (!trusted.includes(cat.payTo)) throw new Error(`Catalogue payee ${cat.payTo} does not match the configured merchant ${trusted.join(",")}; refusing to run`);
-  for (const e of cat.endpoints) {
-    if (e.payTo !== undefined && !trusted.includes(e.payTo)) throw new Error(`Endpoint ${e.id} names payee ${e.payTo}, which is not a configured merchant; refusing to run`);
-  }
+  return { ...cat, endpoints: cat.endpoints.filter((e) => e.payTo === undefined || trusted.includes(e.payTo)) };
+}
+
+/** @deprecated use trustedCatalogue, which drops untrusted extra sellers instead of throwing. Kept for callers. */
+export function assertCatalogueTrusted(cat: { payTo: string; endpoints: { id: string; payTo?: string }[] }, trusted: string[]): void {
+  const kept = trustedCatalogue(cat, trusted);
+  const dropped = cat.endpoints.find((e) => !kept.endpoints.includes(e));
+  if (dropped) throw new Error(`Endpoint ${dropped.id} names payee ${dropped.payTo}, which is not a configured merchant; refusing to run`);
 }
 
 export function validateRunInput(
